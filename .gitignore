@@ -6,6 +6,10 @@
 *.csv
 *.m4a
 **/datasets/*
+*_pycache_*
+runs/
+**/runs/
+*\runs*
 
 ### JetBrains ###
 # Covers JetBrains IDEs: IntelliJ, RubyMine, PhpStorm, AppCode, PyCharm, CLion, Android Studio, WebStorm and Rider
