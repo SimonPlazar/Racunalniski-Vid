@@ -416,9 +416,25 @@ def visualize_regression_result(model, image, window_size=64, margin=16, disp_ra
     model.eval()
 
     # Generate pair from your existing pipeline
-    pair, offsets_gt, src_corners, warped_true = generate_pair(
+    pair, offsets_gt, corners_pair, image_pair = generate_pair(
         image, window_size=window_size, margin=margin, disp_range=disp_range
     )
+
+    # Normalize / minimal checks
+    pair = np.asarray(pair, dtype=np.float32)  # H x W x 2
+    offsets_gt = np.asarray(offsets_gt, dtype=np.float32).squeeze()
+    corners_pair = np.asarray(corners_pair, dtype=np.float32)
+
+    # Extract src_corners and dst_corners from corners_pair (common layouts)
+    if corners_pair.ndim == 3 and corners_pair.shape[2] == 2:
+        src_corners = corners_pair[:, :, 0]
+        dst_corners_gt = corners_pair[:, :, 1]
+    elif corners_pair.ndim == 3 and corners_pair.shape[0] == 2 and corners_pair.shape[1] == 4:
+        src_corners = corners_pair[0]
+        dst_corners_gt = corners_pair[1]
+    else:
+        raise ValueError(f"Unexpected corners_pair shape: {corners_pair.shape}")
+
     dst_corners_gt = src_corners + offsets_gt  # ground-truth displaced corners
 
     # Prepare tensor
@@ -466,7 +482,6 @@ def visualize_regression_result(model, image, window_size=64, margin=16, disp_ra
 def visualize_classification_result(
         model,
         image,
-        dataloader,
         window_size=64,
         margin=16,
         disp_range=(-16, 16),
@@ -475,11 +490,24 @@ def visualize_classification_result(
 ):
     model.eval()
 
-    # === Generate a random training-like pair ===
-    pair, offsets_gt, src_corners, warped_true = generate_pair(
+    pair, offsets_gt, corners_pair, image_pair = generate_pair(
         image, window_size=window_size, margin=margin, disp_range=disp_range
     )
-    pair, offsets_gt, _, _ = dataloader
+
+    # Normalize / minimal checks
+    pair = np.asarray(pair, dtype=np.float32)  # H x W x 2
+    offsets_gt = np.asarray(offsets_gt, dtype=np.float32).squeeze()
+    corners_pair = np.asarray(corners_pair, dtype=np.float32)
+
+    # Extract src_corners and dst_corners from corners_pair (common layouts)
+    if corners_pair.ndim == 3 and corners_pair.shape[2] == 2:
+        src_corners = corners_pair[:, :, 0]
+        dst_corners_gt = corners_pair[:, :, 1]
+    elif corners_pair.ndim == 3 and corners_pair.shape[0] == 2 and corners_pair.shape[1] == 4:
+        src_corners = corners_pair[0]
+        dst_corners_gt = corners_pair[1]
+    else:
+        raise ValueError(f"Unexpected corners_pair shape: {corners_pair.shape}")
 
     dst_corners_gt = src_corners + offsets_gt  # true warped corners
 
