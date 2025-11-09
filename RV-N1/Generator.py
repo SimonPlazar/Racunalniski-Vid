@@ -99,7 +99,7 @@ def generate_pair(img, window_size=64, margin=16, disp_range=(-16, 16)):
     # print("offsets: ", offsets)
 
     image_pair = np.stack([img, warped], axis=-1)
-    corners_pair = np.stack([src_corners, dst_corners], axis=-1)
+    corners_pair = np.stack([src_corners, dst_corners], axis=-1).astype(np.float32)
 
     return pair, offsets, corners_pair, image_pair
 
@@ -127,10 +127,16 @@ def visualize_generate_pair(image_dir):
 
     # Get corners
     src_corners = get_corners(x, y, window_size)
-    dst_corners = perturb_corners(src_corners, disp_range)
+    dst_corners, disp = perturb_corners(src_corners, disp_range)  # unpack the tuple
+
+    # Ensure numeric arrays of shape (4,2) and dtype float32
+    src = np.asarray(src_corners).reshape(-1, 2).astype(np.float32)
+    dst = np.asarray(dst_corners).reshape(-1, 2).astype(np.float32)
+    if src.shape != (4, 2) or dst.shape != (4, 2):
+        raise ValueError(f"Expected corners shape (4,2), got src={src.shape}, dst={dst.shape}")
 
     # Compute homography
-    H = cv2.getPerspectiveTransform(src_corners, dst_corners)
+    H = cv2.getPerspectiveTransform(src, dst)
     H_inv = np.linalg.inv(H)
 
     # Warp image
@@ -141,7 +147,7 @@ def visualize_generate_pair(image_dir):
     warped_patch = warped[y:y + window_size, x:x + window_size]
 
     # Calculate offsets
-    offsets = dst_corners - src_corners
+    offsets = dst - src
 
     # Plot
     fig, axes = plt.subplots(2, 3, figsize=(15, 10))
@@ -149,7 +155,7 @@ def visualize_generate_pair(image_dir):
     # 1. Original image with source corners
     ax = axes[0, 0]
     ax.imshow(img, cmap='gray')
-    for i, (cx, cy) in enumerate(src_corners):
+    for i, (cx, cy) in enumerate(src):
         ax.plot(cx, cy, 'go', markersize=10)
         ax.text(cx, cy - 5, f'{i}', color='green', fontsize=12, ha='center')
     rect = plt.Rectangle((x, y), window_size, window_size, fill=False, edgecolor='green', linewidth=2)
@@ -160,12 +166,12 @@ def visualize_generate_pair(image_dir):
     # 2. Original image with destination corners
     ax = axes[0, 1]
     ax.imshow(img, cmap='gray')
-    for i, (cx, cy) in enumerate(dst_corners):
+    for i, (cx, cy) in enumerate(dst):
         ax.plot(cx, cy, 'ro', markersize=10)
         ax.text(cx, cy - 5, f'{i}', color='red', fontsize=12, ha='center')
     # Draw lines showing displacement
     for i in range(4):
-        ax.arrow(src_corners[i, 0], src_corners[i, 1],
+        ax.arrow(src[i, 0], src[i, 1],
                  offsets[i, 0], offsets[i, 1],
                  head_width=3, head_length=3, fc='yellow', ec='yellow', alpha=0.7)
     rect = plt.Rectangle((x, y), window_size, window_size, fill=False, edgecolor='green', linewidth=2, linestyle='--')
@@ -235,6 +241,7 @@ def get_random_images(num_images=None, image_dir="datasets/val2017_preprocessed"
         else:
             print(f"⚠️ Warning: Could not load image at {path}")
     return images
+
 
 def get_all_images(image_dir="datasets/val2017_preprocessed"):
     image_paths = [os.path.join(image_dir, f) for f in os.listdir(image_dir)
