@@ -331,10 +331,6 @@ def classification_loss(ce, logits, gt_offsets, disp_range=(-16, 16), num_classe
     return loss
 
 
-def rmse(pred, target):
-    return torch.sqrt(((pred - target) ** 2).mean(dim=-1))
-
-
 # ============================================================
 # VISUALIZATION UTILITIES
 # ============================================================
@@ -444,31 +440,81 @@ def visualize_regression_result(model, image, window_size=64, margin=16, disp_ra
     with torch.no_grad():
         pred_offsets = model(pair_tensor).cpu().numpy().reshape(4, 2)
 
-    dst_corners_pred = src_corners - pred_offsets  # predicted displaced corners
+    dst_corners_pred = src_corners + pred_offsets  # predicted displaced corners
+
+    # Extract patches
+    patch_original = pair[:, :, 0]  # Original patch
+    patch_warped = pair[:, :, 1]    # Warped patch (GT transformation)
+
+    # Create predicted warped patch (same process as GT, but with predicted offsets)
+    h, w = patch_original.shape
+
+    # Original patch corner positions (in patch coordinate space)
+    patch_corners_orig = np.float32([[0, 0], [w, 0], [w, h], [0, h]])
+
+    # Displaced corners using predicted offsets
+    patch_corners_pred = patch_corners_orig + pred_offsets
+
+    # Compute homography from original corners to predicted displaced corners
+    H_pred, _ = cv2.findHomography(patch_corners_orig, patch_corners_pred, method=0)
+    H_pred_inv = np.linalg.inv(H_pred)
+
+    # Warp the original patch with the inverse (same as how GT warped patch is created)
+    patch_warped_pred = cv2.warpPerspective(
+        (patch_original * 255).astype(np.uint8),
+        H_pred_inv,
+        (w, h)
+    ) / 255.0
+
+    # Compute errors
+    error = pred_offsets - offsets_gt
+    rmse = np.sqrt(np.mean(error ** 2))
+    mae = np.mean(np.abs(error))
 
     # --- Visualization ---
-    fig, ax = plt.subplots(1, 1, figsize=(8, 6))
-    ax.imshow(image, cmap='gray')
+    fig = plt.figure(figsize=(15, 10))
+    gs = fig.add_gridspec(2, 3, height_ratios=[1.5, 1], hspace=0.3, wspace=0.3)
+
+    # Row 1: Full image with wireframes
+    ax_full = fig.add_subplot(gs[0, :])
+    ax_full.imshow(image, cmap='gray')
 
     # Plot polygons: source, GT, predicted
-    ax.add_patch(plt.Polygon(src_corners, fill=False, edgecolor='lime', lw=2, label='Source'))
-    ax.add_patch(plt.Polygon(dst_corners_gt, fill=False, edgecolor='cyan', lw=2, label='Warped (GT)'))
-    ax.add_patch(plt.Polygon(dst_corners_pred, fill=False, edgecolor='red', lw=2, label='Predicted'))
+    ax_full.add_patch(plt.Polygon(src_corners, fill=False, edgecolor='lime', lw=2, label='Source'))
+    ax_full.add_patch(plt.Polygon(dst_corners_gt, fill=False, edgecolor='cyan', lw=2, label='Warped (GT)'))
+    ax_full.add_patch(plt.Polygon(dst_corners_pred, fill=False, edgecolor='red', lw=2, label='Predicted'))
 
     # Draw corner points and labels
     for i, (x, y) in enumerate(src_corners):
-        ax.plot(x, y, 'go', markersize=6)
-        ax.text(x + 3, y - 3, str(i), color='lime', fontsize=10, weight='bold')
+        ax_full.plot(x, y, 'go', markersize=6)
+        ax_full.text(x + 3, y - 3, str(i), color='lime', fontsize=10, weight='bold')
 
     for (x, y) in dst_corners_pred:
-        ax.plot(x, y, 'ro', markersize=6)
+        ax_full.plot(x, y, 'ro', markersize=6)
 
     for (x, y) in dst_corners_gt:
-        ax.plot(x, y, 'co', markersize=6)
+        ax_full.plot(x, y, 'co', markersize=6)
 
-    ax.legend()
-    ax.set_title("Homography Regression Visualization\nGreen=Source, Cyan=GT Warped, Red=Predicted")
-    ax.axis("off")
+    ax_full.legend(loc='upper right', fontsize=10)
+    ax_full.set_title(f"Homography Regression Visualization\nGreen=Source, Cyan=GT Warped, Red=Predicted\nRMSE: {rmse:.2f}px, MAE: {mae:.2f}px",
+                     fontsize=12, fontweight='bold')
+    ax_full.axis("off")
+
+    # Row 2: Three patches
+    ax1 = fig.add_subplot(gs[1, 0])
+    ax1.imshow(patch_original, cmap='gray', vmin=0, vmax=1)
+    ax1.set_title('Original Patch', fontsize=12, fontweight='bold')
+    ax1.axis('off')
+
+    ax2 = fig.add_subplot(gs[1, 1])
+    ax2.imshow(patch_warped, cmap='gray', vmin=0, vmax=1)
+    ax2.set_title('Warped Patch (GT)', fontsize=12, fontweight='bold')
+    ax2.axis('off')
+
+    ax3 = fig.add_subplot(gs[1, 2])
+    ax3.imshow(patch_warped_pred, cmap='gray', vmin=0, vmax=1)
+    ax3.set_title('Warped Patch (Predicted)', fontsize=12, fontweight='bold')
+    ax3.axis('off')
 
     plt.tight_layout()
     plt.show()
@@ -521,29 +567,133 @@ def visualize_classification_result(
 
     dst_corners_pred = src_corners + pred_offsets  # predicted warped corners
 
+    # Extract patches
+    patch_original = pair[:, :, 0]  # Original patch
+    patch_warped = pair[:, :, 1]    # Warped patch (GT transformation)
+
+    # Create predicted warped patch (same process as GT, but with predicted offsets)
+    h, w = patch_original.shape
+
+    # Original patch corner positions (in patch coordinate space)
+    patch_corners_orig = np.float32([[0, 0], [w, 0], [w, h], [0, h]])
+
+    # Displaced corners using predicted offsets
+    patch_corners_pred = patch_corners_orig + pred_offsets
+
+    # Compute homography from original corners to predicted displaced corners
+    H_pred, _ = cv2.findHomography(patch_corners_orig, patch_corners_pred, method=0)
+    H_pred_inv = np.linalg.inv(H_pred)
+
+    # Warp the original patch with the inverse (same as how GT warped patch is created)
+    patch_warped_pred = cv2.warpPerspective(
+        (patch_original * 255).astype(np.uint8),
+        H_pred_inv,
+        (w, h)
+    ) / 255.0
+
+    # Compute errors
+    error = pred_offsets - offsets_gt
+    rmse = np.sqrt(np.mean(error ** 2))
+    mae = np.mean(np.abs(error))
+
     # === Visualization ===
-    fig, ax = plt.subplots(1, 1, figsize=(8, 6))
-    ax.imshow(image, cmap='gray')
+    fig = plt.figure(figsize=(15, 10))
+    gs = fig.add_gridspec(2, 3, height_ratios=[1.5, 1], hspace=0.3, wspace=0.3)
+
+    # Row 1: Full image with wireframes
+    ax_full = fig.add_subplot(gs[0, :])
+    ax_full.imshow(image, cmap='gray')
 
     # Draw polygons
-    ax.add_patch(plt.Polygon(src_corners, fill=False, edgecolor='lime', lw=2, label='Source'))
-    ax.add_patch(plt.Polygon(dst_corners_gt, fill=False, edgecolor='cyan', lw=2, label='GT Warped'))
-    ax.add_patch(plt.Polygon(dst_corners_pred, fill=False, edgecolor='red', lw=2, label='Predicted'))
+    ax_full.add_patch(plt.Polygon(src_corners, fill=False, edgecolor='lime', lw=2, label='Source'))
+    ax_full.add_patch(plt.Polygon(dst_corners_gt, fill=False, edgecolor='cyan', lw=2, label='GT Warped'))
+    ax_full.add_patch(plt.Polygon(dst_corners_pred, fill=False, edgecolor='red', lw=2, label='Predicted'))
 
     # Draw corner markers
     for i, (x, y) in enumerate(src_corners):
-        ax.plot(x, y, 'go', markersize=6)
-        ax.text(x + 3, y - 3, str(i), color='lime', fontsize=10, weight='bold')
+        ax_full.plot(x, y, 'go', markersize=6)
+        ax_full.text(x + 3, y - 3, str(i), color='lime', fontsize=10, weight='bold')
 
     for (x, y) in dst_corners_gt:
-        ax.plot(x, y, 'co', markersize=5)
+        ax_full.plot(x, y, 'co', markersize=5)
 
     for (x, y) in dst_corners_pred:
-        ax.plot(x, y, 'ro', markersize=5)
+        ax_full.plot(x, y, 'ro', markersize=5)
 
-    ax.legend()
-    ax.set_title(f"Homography Classification Visualization\n(soft={soft_decode})\nGreen=Src, Cyan=GT, Red=Predicted")
-    ax.axis("off")
+    ax_full.legend(loc='upper right', fontsize=10)
+    decode_mode = "Soft" if soft_decode else "Hard"
+    ax_full.set_title(f"Homography Classification Visualization ({decode_mode})\nGreen=Src, Cyan=GT, Red=Predicted\nRMSE: {rmse:.2f}px, MAE: {mae:.2f}px",
+                     fontsize=12, fontweight='bold')
+    ax_full.axis("off")
+
+    # Row 2: Three patches
+    ax1 = fig.add_subplot(gs[1, 0])
+    ax1.imshow(patch_original, cmap='gray', vmin=0, vmax=1)
+    ax1.set_title('Original Patch', fontsize=12, fontweight='bold')
+    ax1.axis('off')
+
+    ax2 = fig.add_subplot(gs[1, 1])
+    ax2.imshow(patch_warped, cmap='gray', vmin=0, vmax=1)
+    ax2.set_title('Warped Patch (GT)', fontsize=12, fontweight='bold')
+    ax2.axis('off')
+
+    ax3 = fig.add_subplot(gs[1, 2])
+    ax3.imshow(patch_warped_pred, cmap='gray', vmin=0, vmax=1)
+    ax3.set_title('Warped Patch (Predicted)', fontsize=12, fontweight='bold')
+    ax3.axis('off')
+
+    plt.tight_layout()
+    plt.show()
+
+    # === Prediction Maps Visualization ===
+    # Compute probability maps for each corner showing confidence distribution
+    with torch.no_grad():
+        # Model outputs (1, 8, 21), transpose to (1, 21, 8) to match reference code format
+        preds_transposed = preds.transpose(1, 2)  # (1, 21, 8)
+        preds_softmax = torch.nn.Softmax(dim=1)(preds_transposed)  # Apply softmax over classes (dim=1)
+
+        # Combine x and y coordinate probabilities to create 2D probability distributions
+        # Even indices (0, 2, 4, 6) are x coordinates, odd indices (1, 3, 5, 7) are y coordinates
+        # pred_maps[i, j, k] = P(x_offset=i) * P(y_offset=j) for corner k
+        pred_maps = (preds_softmax[:, :, ::2].reshape(-1, 21, 1, 4) *
+                     preds_softmax[:, :, 1::2].reshape(-1, 1, 21, 4)).cpu().numpy()
+
+    # Create prediction maps figure
+    fig_maps, axes_maps = plt.subplots(1, 4, figsize=(16, 4))
+
+    min_disp, max_disp = disp_range
+    extent = [min_disp, max_disp, max_disp, min_disp]  # [left, right, bottom, top]
+
+    for corner_idx in range(4):
+        ax = axes_maps[corner_idx]
+
+        # Display the probability heatmap showing confidence distribution
+        im = ax.imshow(pred_maps[0, :, :, corner_idx], extent=extent, cmap='viridis', aspect='auto', interpolation='bilinear')
+
+        # Mark the ground truth offset (from generate_pair) with green circle
+        # Note: reference code plots as (y, x) so we swap the indices
+        gt_x = offsets_gt[corner_idx, 1]  # y-coordinate
+        gt_y = offsets_gt[corner_idx, 0]  # x-coordinate
+        ax.plot(gt_x, gt_y, 'go', markersize=10, markerfacecolor='none', markeredgewidth=2.5, label='GT')
+
+        # Mark the predicted offset (from model) with red plus
+        # Note: reference code plots as (y, x) so we swap the indices
+        pred_x = pred_offsets[corner_idx, 1]  # y-coordinate
+        pred_y = pred_offsets[corner_idx, 0]  # x-coordinate
+        ax.plot(pred_x, pred_y, 'r+', markersize=12, markeredgewidth=2.5, label='Predicted')
+
+        ax.set_xlabel('Y Offset (px)', fontsize=10)
+        ax.set_ylabel('X Offset (px)', fontsize=10)
+        ax.set_title(f'Corner {corner_idx}', fontsize=11, fontweight='bold')
+        ax.grid(True, alpha=0.2, linestyle='--', linewidth=0.5)
+        ax.legend(loc='upper right', fontsize=8)
+
+        # Add colorbar showing probability/confidence
+        cbar = plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+        cbar.set_label('Confidence', fontsize=9)
+
+    plt.suptitle(f'Prediction Confidence Maps ({decode_mode} Decode)\nGreen Circle = Ground Truth, Red Plus = Predicted',
+                 fontsize=13, fontweight='bold')
     plt.tight_layout()
     plt.show()
 
