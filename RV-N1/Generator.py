@@ -227,11 +227,10 @@ def get_images_from_names(image_names, image_dir):
     return images
 
 
-def get_random_images(num_images=None, image_dir="datasets/val2017_preprocessed"):
+def get_random_images(num_images, image_dir="datasets/val2017_preprocessed"):
     image_paths = [os.path.join(image_dir, f) for f in os.listdir(image_dir)
                    if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
-    if num_images is None:
-        num_images = len(image_paths)
+
     selected_paths = random.sample(image_paths, min(num_images, len(image_paths)))
     images = []
     for path in selected_paths:
