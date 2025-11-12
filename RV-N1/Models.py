@@ -444,7 +444,7 @@ def visualize_regression_result(model, image, window_size=64, margin=16, disp_ra
 
     # Extract patches
     patch_original = pair[:, :, 0]  # Original patch
-    patch_warped = pair[:, :, 1]    # Warped patch (GT transformation)
+    patch_warped = pair[:, :, 1]  # Warped patch (GT transformation)
 
     # Create predicted warped patch (same process as GT, but with predicted offsets)
     h, w = patch_original.shape
@@ -496,8 +496,9 @@ def visualize_regression_result(model, image, window_size=64, margin=16, disp_ra
         ax_full.plot(x, y, 'co', markersize=6)
 
     ax_full.legend(loc='upper right', fontsize=10)
-    ax_full.set_title(f"Homography Regression Visualization\nGreen=Source, Cyan=GT Warped, Red=Predicted\nRMSE: {rmse:.2f}px, MAE: {mae:.2f}px",
-                     fontsize=12, fontweight='bold')
+    ax_full.set_title(
+        f"Homography Regression Visualization\nGreen=Source, Cyan=GT Warped, Red=Predicted\nRMSE: {rmse:.2f}px, MAE: {mae:.2f}px",
+        fontsize=12, fontweight='bold')
     ax_full.axis("off")
 
     # Row 2: Three patches
@@ -569,7 +570,7 @@ def visualize_classification_result(
 
     # Extract patches
     patch_original = pair[:, :, 0]  # Original patch
-    patch_warped = pair[:, :, 1]    # Warped patch (GT transformation)
+    patch_warped = pair[:, :, 1]  # Warped patch (GT transformation)
 
     # Create predicted warped patch (same process as GT, but with predicted offsets)
     h, w = patch_original.shape
@@ -622,8 +623,9 @@ def visualize_classification_result(
 
     ax_full.legend(loc='upper right', fontsize=10)
     decode_mode = "Soft" if soft_decode else "Hard"
-    ax_full.set_title(f"Homography Classification Visualization ({decode_mode})\nGreen=Src, Cyan=GT, Red=Predicted\nRMSE: {rmse:.2f}px, MAE: {mae:.2f}px",
-                     fontsize=12, fontweight='bold')
+    ax_full.set_title(
+        f"Homography Classification Visualization ({decode_mode})\nGreen=Src, Cyan=GT, Red=Predicted\nRMSE: {rmse:.2f}px, MAE: {mae:.2f}px",
+        fontsize=12, fontweight='bold')
     ax_full.axis("off")
 
     # Row 2: Three patches
@@ -668,7 +670,8 @@ def visualize_classification_result(
         ax = axes_maps[corner_idx]
 
         # Display the probability heatmap showing confidence distribution
-        im = ax.imshow(pred_maps[0, :, :, corner_idx], extent=extent, cmap='viridis', aspect='auto', interpolation='bilinear')
+        im = ax.imshow(pred_maps[0, :, :, corner_idx], extent=extent, cmap='viridis', aspect='auto',
+                       interpolation='bilinear')
 
         # Mark the ground truth offset (from generate_pair) with green circle
         # Note: reference code plots as (y, x) so we swap the indices
@@ -692,8 +695,9 @@ def visualize_classification_result(
         cbar = plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
         cbar.set_label('Confidence', fontsize=9)
 
-    plt.suptitle(f'Prediction Confidence Maps ({decode_mode} Decode)\nGreen Circle = Ground Truth, Red Plus = Predicted',
-                 fontsize=13, fontweight='bold')
+    plt.suptitle(
+        f'Prediction Confidence Maps ({decode_mode} Decode)\nGreen Circle = Ground Truth, Red Plus = Predicted',
+        fontsize=13, fontweight='bold')
     plt.tight_layout()
     plt.show()
 
