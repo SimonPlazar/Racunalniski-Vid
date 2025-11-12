@@ -149,66 +149,78 @@ def visualize_generate_pair(image_dir):
     # Calculate offsets
     offsets = dst - src
 
-    # Plot
-    fig, axes = plt.subplots(2, 3, figsize=(15, 10))
+    # Determine crop area around the bounding box with padding
+    pad = 30  # padding around the box
+    all_corners = np.vstack([src, dst])
+    min_x = max(0, int(np.min(all_corners[:, 0])) - pad)
+    max_x = min(w, int(np.max(all_corners[:, 0])) + pad)
+    min_y = max(0, int(np.min(all_corners[:, 1])) - pad)
+    max_y = min(h, int(np.max(all_corners[:, 1])) + pad)
 
-    # 1. Original image with source corners
-    ax = axes[0, 0]
-    ax.imshow(img, cmap='gray')
-    for i, (cx, cy) in enumerate(src):
-        ax.plot(cx, cy, 'go', markersize=10)
-        ax.text(cx, cy - 5, f'{i}', color='green', fontsize=12, ha='center')
-    rect = plt.Rectangle((x, y), window_size, window_size, fill=False, edgecolor='green', linewidth=2)
-    ax.add_patch(rect)
-    ax.set_title('Original Image + Source Corners (green)')
-    ax.axis('off')
+    # Crop images
+    img_crop = img[min_y:max_y, min_x:max_x]
+    warped_crop = warped[min_y:max_y, min_x:max_x]
 
-    # 2. Original image with destination corners
-    ax = axes[0, 1]
-    ax.imshow(img, cmap='gray')
-    for i, (cx, cy) in enumerate(dst):
-        ax.plot(cx, cy, 'ro', markersize=10)
-        ax.text(cx, cy - 5, f'{i}', color='red', fontsize=12, ha='center')
-    # Draw lines showing displacement
+    # Adjust corner coordinates for cropped images
+    src_crop = src - np.array([min_x, min_y])
+    dst_crop = dst - np.array([min_x, min_y])
+    x_crop = x - min_x
+    y_crop = y - min_y
+
+    # Plot - single row with 4 subplots
+    fig, axes = plt.subplots(1, 4, figsize=(16, 4), facecolor='white')
+    fig.patch.set_facecolor('white')
+
+    # 1. Original image (cropped) with both source and destination corners
+    ax = axes[0]
+    ax.imshow(img_crop, cmap='gray')
+    # Draw green box for source corners
+    rect_src = plt.Rectangle((x_crop, y_crop), window_size, window_size, fill=False, edgecolor='green', linewidth=2)
+    ax.add_patch(rect_src)
+    # Draw source corners
+    for i, (cx, cy) in enumerate(src_crop):
+        ax.plot(cx, cy, 'go', markersize=8)
+        ax.text(cx, cy - 3, f'{i}', color='green', fontsize=9, ha='center')
+
+    # Draw red polygon for destination corners
+    dst_polygon = plt.Polygon(dst_crop, fill=False, edgecolor='red', linewidth=2)
+    ax.add_patch(dst_polygon)
+    # Draw destination corners
+    for i, (cx, cy) in enumerate(dst_crop):
+        ax.plot(cx, cy, 'ro', markersize=8)
+        ax.text(cx, cy - 3, f'{i}', color='red', fontsize=9, ha='center')
+
+    # Draw arrows showing displacement
     for i in range(4):
-        ax.arrow(src[i, 0], src[i, 1],
+        ax.arrow(src_crop[i, 0], src_crop[i, 1],
                  offsets[i, 0], offsets[i, 1],
-                 head_width=3, head_length=3, fc='yellow', ec='yellow', alpha=0.7)
-    rect = plt.Rectangle((x, y), window_size, window_size, fill=False, edgecolor='green', linewidth=2, linestyle='--')
-    ax.add_patch(rect)
-    ax.set_title(f'Perturbed Corners (red)\nAvg offset: {np.abs(offsets).mean():.1f}px')
+                 head_width=2, head_length=2, fc='yellow', ec='yellow', alpha=0.6)
+
+    ax.set_title(f'Original (Green→Red)\nAvg offset: {np.abs(offsets).mean():.1f}px', fontsize=10)
     ax.axis('off')
 
-    # 3. Warped image with H^-1
-    ax = axes[0, 2]
-    ax.imshow(warped, cmap='gray')
-    rect = plt.Rectangle((x, y), window_size, window_size, fill=False, edgecolor='blue', linewidth=2)
+    # 2. Warped image (cropped) with H^-1
+    ax = axes[1]
+    ax.imshow(warped_crop, cmap='gray')
+    rect = plt.Rectangle((x_crop, y_crop), window_size, window_size, fill=False, edgecolor='blue', linewidth=2)
     ax.add_patch(rect)
-    ax.set_title('Warped Image (H⁻¹ applied)')
+    ax.set_title('Warped (H⁻¹)', fontsize=10)
     ax.axis('off')
 
-    # 4. Original patch
-    ax = axes[1, 0]
+    # 3. Original patch
+    ax = axes[2]
     ax.imshow(orig_patch, cmap='gray')
-    ax.set_title('Original Patch (64×64)')
+    ax.set_title('Original Patch', fontsize=10)
     ax.axis('off')
 
-    # 5. Warped patch
-    ax = axes[1, 1]
+    # 4. Warped patch
+    ax = axes[3]
     ax.imshow(warped_patch, cmap='gray')
-    ax.set_title('Warped Patch (64×64)')
+    ax.set_title('Warped Patch', fontsize=10)
     ax.axis('off')
-
-    # Hide the 6th subplot
-    axes[1, 2].axis('off')
 
     plt.tight_layout()
     plt.show()
-
-    # Print offsets
-    print("\nCorner offsets (Δx, Δy):")
-    for i, (dx, dy) in enumerate(offsets):
-        print(f"  Corner {i}: ({dx:+.1f}, {dy:+.1f}) px")
 
 
 # ============================================================
