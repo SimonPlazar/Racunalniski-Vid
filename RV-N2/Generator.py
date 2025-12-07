@@ -6,19 +6,50 @@ from scipy.ndimage import gaussian_filter
 
 # Utility functions
 
-def get_random_color(min_diff=50, exclude_color=None):
-    """Generate random color, optionally ensuring it's different from exclude_color."""
-    while True:
-        color = (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
+def get_random_color(min_diff=50, exclude_color=None, grayscale=None):
+    """
+    Generate random color (RGB tuple) or brightness (single-value tuple).
+
+    Args:
+        min_diff: Minimum difference from exclude_color
+        exclude_color: Color/brightness to avoid (tuple for RGB, single-value tuple for grayscale)
+        grayscale: If True, generate grayscale; if False, RGB; if None, auto-detect from exclude_color
+
+    Returns:
+        Grayscale: (brightness,) - single-value tuple
+        RGB: (B, G, R) - three-value tuple
+    """
+    # Auto-detect grayscale mode from exclude_color if not specified
+    if grayscale is None:
         if exclude_color is not None:
-            diff = sum(abs(a - b) for a, b in zip(color, exclude_color))
-            if diff < min_diff:
-                continue
-        return color
+            grayscale = len(exclude_color) == 1 if isinstance(exclude_color, tuple) else False
+        else:
+            grayscale = False
+
+    if grayscale:
+        # Generate grayscale brightness value
+        while True:
+            brightness = random.randint(0, 255)
+            if exclude_color is not None:
+                # exclude_color is (brightness,) tuple
+                exclude_val = exclude_color[0] if isinstance(exclude_color, tuple) else exclude_color
+                diff = abs(brightness - exclude_val)
+                if diff < min_diff:
+                    continue
+            return (brightness,)
+    else:
+        # Generate RGB color
+        while True:
+            color = (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
+            if exclude_color is not None:
+                diff = sum(abs(a - b) for a, b in zip(color, exclude_color))
+                if diff < min_diff:
+                    continue
+            return color
 
 
 def add_gaussian_noise(image, sigma=None):
-    """Add Gaussian noise to image."""
+    """Add Gaussian noise to image (handles both RGB and grayscale)."""
     if sigma is None:
         sigma = random.uniform(0.01, 0.05)
 
@@ -29,8 +60,15 @@ def add_gaussian_noise(image, sigma=None):
 
     # Apply slight Gaussian blur for smoothing
     blur_sigma = random.uniform(0.1, 0.3)
-    for i in range(3):
-        noisy[:, :, i] = gaussian_filter(noisy[:, :, i], sigma=blur_sigma)
+
+    # Check if grayscale or RGB
+    if len(image.shape) == 2:
+        # Grayscale
+        noisy = gaussian_filter(noisy, sigma=blur_sigma)
+    else:
+        # RGB
+        for i in range(3):
+            noisy[:, :, i] = gaussian_filter(noisy[:, :, i], sigma=blur_sigma)
 
     return noisy
 
@@ -63,9 +101,7 @@ def generate_triangle(width, height):
         points.append([x, y])
 
     points = np.array(points, dtype=np.float32)
-    color = get_random_color()
-
-    return points, color, "triangle"
+    return points, "triangle"
 
 
 def generate_quadrilateral(width, height):
@@ -89,9 +125,7 @@ def generate_quadrilateral(width, height):
         points.append([x, y])
 
     points = np.array(points, dtype=np.float32)
-    color = get_random_color()
-
-    return points, color, "quadrilateral"
+    return points, "quadrilateral"
 
 
 def generate_star(width, height, num_points=5, min_angle_deg=30):
@@ -155,9 +189,7 @@ def generate_star(width, height, num_points=5, min_angle_deg=30):
         points.append([x, y])
 
     points = np.array(points, dtype=np.float32)
-    color = get_random_color()
-
-    return points, color, "star"
+    return points, "star"
 
 
 def draw_simple_shape(img, points, color, shape_type):
@@ -218,13 +250,7 @@ def generate_checkerboard(width, height, rows=4, cols=5, randomize=True):
 
     keypoints = np.array(keypoints, dtype=np.float32)
 
-    # colors
-    color1 = get_random_color()
-    color2 = get_random_color(min_diff=80, exclude_color=color1)
-
     params = {
-        "color1": color1,
-        "color2": color2,
         "rows": rows,
         "cols": cols,
         "origin_x": origin_x,
@@ -238,10 +264,8 @@ def generate_checkerboard(width, height, rows=4, cols=5, randomize=True):
     return keypoints, params, "checkerboard"
 
 
-def draw_checkerboard(img, keypoints, params):
-    """Draw checkerboard given params (origin, cell_size, rows, cols)."""
-    color1 = params["color1"]
-    color2 = params["color2"]
+def draw_checkerboard(img, keypoints, params, color1, color2):
+    """Draw checkerboard given params (origin, cell_size, rows, cols) and colors."""
     rows = params["rows"]
     cols = params["cols"]
     origin_x = params["origin_x"]
@@ -292,13 +316,21 @@ def generate_cube(width, height, randomize=True):
     back_np = np.array(back, dtype=np.float32)
 
     # Determine visible back vertices (outside or on-edge of front polygon)
-    padding = 5
+    padding = 2
     front_poly = front_np.astype(np.int32).reshape((-1, 1, 2))
     visible_back_idxs = []
     for idx, (x, y) in enumerate(back_np):
         dist = cv2.pointPolygonTest(front_poly, (float(x), float(y)), True)
-        if dist <= padding:
+        if dist <= -padding:
             visible_back_idxs.append(idx)
+
+    # Ensure we get at least 1 and at most 3 visible back vertices
+    if len(visible_back_idxs) < 1:
+        # Fallback: if no vertices are visible, take the one furthest outside
+        distances = [cv2.pointPolygonTest(front_poly, (float(x), float(y)), True)
+                     for x, y in back_np]
+        visible_back_idxs = [int(np.argmin(distances))]
+
     visible_back_idxs = visible_back_idxs[:3]
 
     # keypoints: 4 front corners then visible back corners
@@ -307,12 +339,7 @@ def generate_cube(width, height, randomize=True):
         keypoints_list.append(list(back_np[idx]))
     keypoints = np.array(keypoints_list, dtype=np.float32)
 
-    cube_color = get_random_color(min_diff=60, exclude_color=None)
-    line_color = get_random_color(min_diff=80, exclude_color=cube_color)
-
     params = {
-        "cube_color": cube_color,
-        "line_color": line_color,
         "front_full": front_np,
         "back_full": back_np,
         "visible_back_order": visible_back_idxs,
@@ -322,11 +349,8 @@ def generate_cube(width, height, randomize=True):
     return keypoints, params, "cube"
 
 
-def draw_cube(img, keypoints, params):
-    """Draw cube: fill visible faces with cube_color and draw only edges visible to camera using line_color."""
-    cube_color = params["cube_color"]
-    line_color = params["line_color"]
-
+def draw_cube(img, keypoints, params, cube_color, line_color):
+    """Draw cube given params and colors."""
     front = params["front_full"].astype(np.int32)
     back = params["back_full"].astype(np.int32)
 
@@ -409,7 +433,6 @@ def draw_cube(img, keypoints, params):
 
 def generate_multiple_shapes(width, height, num_shapes=3):
     """Generate multiple non-overlapping simple shapes."""
-    all_keypoints = []
     shapes_data = []
     masks = []
 
@@ -423,11 +446,11 @@ def generate_multiple_shapes(width, height, num_shapes=3):
         shape_type = random.choice(["triangle", "quadrilateral", "star"])
 
         if shape_type == "triangle":
-            points, color, stype = generate_triangle(width, height)
+            points, stype = generate_triangle(width, height)
         elif shape_type == "quadrilateral":
-            points, color, stype = generate_quadrilateral(width, height)
+            points, stype = generate_quadrilateral(width, height)
         else:
-            points, color, stype = generate_star(width, height, num_points=random.choice([4, 5]))
+            points, stype = generate_star(width, height, num_points=random.choice([4, 5]))
 
         # Create mask for this shape
         temp_img = np.zeros((height, width), dtype=np.uint8)
@@ -451,7 +474,7 @@ def generate_multiple_shapes(width, height, num_shapes=3):
                 break
 
         if not overlap:
-            shapes_data.append((points, color, stype))
+            shapes_data.append((points, stype))
             masks.append(temp_mask)
 
     return shapes_data
@@ -538,7 +561,7 @@ def filter_keypoints_in_bounds(keypoints, width, height):
 
 # Main dataset generator
 
-def generate_synthetic_image(width=256, height=256, shape_type="random", use_homography=False):
+def generate_synthetic_image(width=256, height=256, shape_type="random", use_homography=False, grayscale=False):
     """
     Generate a synthetic image with keypoints.
 
@@ -546,18 +569,23 @@ def generate_synthetic_image(width=256, height=256, shape_type="random", use_hom
     - width, height: Image dimensions (should be divisible by 8)
     - shape_type: "triangle", "quadrilateral", "star", "checkerboard", "cube", "multiple", "random"
     - use_homography: Whether to apply random homography transformation
+    - grayscale: If True, generate grayscale image; if False, generate RGB image
 
     Returns:
-    - img: RGB image
+    - img: Grayscale (H, W) or RGB (H, W, 3) image as uint8
     - keypoints: Nx2 array of keypoint locations
     """
     # Ensure dimensions are divisible by 8
     width = (width // 8) * 8
     height = (height // 8) * 8
 
-    # Random background color
-    bg_color = get_random_color()
-    img = np.full((height, width, 3), bg_color, dtype=np.uint8)
+    # Generate background color/brightness
+    if grayscale:
+        bg_color = (random.randint(0, 255),)  # Single-value tuple for grayscale
+        img = np.full((height, width), bg_color[0], dtype=np.uint8)
+    else:
+        bg_color = get_random_color(grayscale=False)  # RGB tuple
+        img = np.full((height, width, 3), bg_color, dtype=np.uint8)
 
     # Initialize keypoints
     keypoints = None
@@ -569,44 +597,79 @@ def generate_synthetic_image(width=256, height=256, shape_type="random", use_hom
 
     # Generate shape and keypoints
     if shape_type == "triangle":
-        keypoints, color, _ = generate_triangle(width, height)
-        color = get_random_color(min_diff=80, exclude_color=bg_color)
+        keypoints, _ = generate_triangle(width, height)
+        color = get_random_color(min_diff=100, exclude_color=bg_color, grayscale=grayscale)
         draw_simple_shape(img, keypoints, color, "triangle")
 
     elif shape_type == "quadrilateral":
-        keypoints, color, _ = generate_quadrilateral(width, height)
-        color = get_random_color(min_diff=80, exclude_color=bg_color)
+        keypoints, _ = generate_quadrilateral(width, height)
+        color = get_random_color(min_diff=100, exclude_color=bg_color, grayscale=grayscale)
         draw_simple_shape(img, keypoints, color, "quadrilateral")
 
     elif shape_type == "star":
         num_points = random.choice([4, 5, 6])
-        keypoints, color, _ = generate_star(width, height, num_points)
-        color = get_random_color(min_diff=80, exclude_color=bg_color)
+        keypoints, _ = generate_star(width, height, num_points)
+        color = get_random_color(min_diff=100, exclude_color=bg_color, grayscale=grayscale)
         draw_simple_shape(img, keypoints, color, "star")
 
     elif shape_type == "checkerboard":
         rows = random.choice([3, 4, 5])
         cols = random.choice([3, 4, 5])
         keypoints, params, _ = generate_checkerboard(width, height, rows, cols)
-        draw_checkerboard(img, keypoints, params)
+        # Generate two contrasting colors for checkerboard
+        color1 = get_random_color(min_diff=100, exclude_color=bg_color, grayscale=grayscale)
+        color2 = get_random_color(min_diff=100, exclude_color=color1, grayscale=grayscale)
+        draw_checkerboard(img, keypoints, params, color1, color2)
 
     elif shape_type == "cube":
         keypoints, params, _ = generate_cube(width, height)
-        draw_cube(img, keypoints, params)
+        # Generate two contrasting colors for cube
+        cube_color = get_random_color(min_diff=100, exclude_color=bg_color, grayscale=grayscale)
+        line_color = get_random_color(min_diff=100, exclude_color=cube_color, grayscale=grayscale)
+        draw_cube(img, keypoints, params, cube_color, line_color)
 
     elif shape_type == "multiple":
         shapes_data = generate_multiple_shapes(width, height, num_shapes=random.randint(2, 4))
         keypoints = []
-        for points, color, stype in shapes_data:
-            color = get_random_color(min_diff=120, exclude_color=bg_color)
+        used_colors = [bg_color]
+
+        for points, stype in shapes_data:
+            # Ensure each shape has a different color from bg and other shapes
+            color = get_random_color(min_diff=120, exclude_color=bg_color, grayscale=grayscale)
+            # Try to make it different from previously used colors too
+            attempts = 0
+            while attempts < 5:
+                conflict = False
+                for used_color in used_colors:
+                    if grayscale:
+                        if abs(color[0] - used_color[0]) < 80:
+                            conflict = True
+                            break
+                    else:
+                        if sum(abs(a - b) for a, b in zip(color, used_color)) < 120:
+                            conflict = True
+                            break
+                if not conflict:
+                    break
+                color = get_random_color(min_diff=120, exclude_color=bg_color, grayscale=grayscale)
+                attempts += 1
+
+            used_colors.append(color)
             draw_simple_shape(img, points, color, stype)
             keypoints.append(points)
-        keypoints = np.vstack(keypoints)
+
+        if len(keypoints) > 0:
+            keypoints = np.vstack(keypoints)
+        else:
+            # Fallback to triangle if no shapes were generated
+            keypoints, _ = generate_triangle(width, height)
+            color = get_random_color(min_diff=100, exclude_color=bg_color, grayscale=grayscale)
+            draw_simple_shape(img, keypoints, color, "triangle")
 
     else:
         # Unknown shape type - default to triangle
-        keypoints, color, _ = generate_triangle(width, height)
-        color = get_random_color(min_diff=80, exclude_color=bg_color)
+        keypoints, _ = generate_triangle(width, height)
+        color = get_random_color(min_diff=100, exclude_color=bg_color, grayscale=grayscale)
         draw_simple_shape(img, keypoints, color, "triangle")
 
     # Apply homography if requested (with proper retry logic)

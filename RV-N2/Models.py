@@ -363,16 +363,20 @@ def apply_geometric_augmentation(img, keypoints, image_shape):
     """
     H, W = image_shape
 
-    # Random horizontal flip
-    if np.random.rand() < 0.5:
     # Random horizontal flip (50% chance)
+    if np.random.rand() < 0.5:
+        # Flip the image horizontally (left-right)
+        img = np.fliplr(img)
+        # Flip keypoint x-coordinates
         if len(keypoints) > 0:
             keypoints = keypoints.copy()
             keypoints[:, 0] = W - 1 - keypoints[:, 0]
 
-    # Random vertical flip
-    if np.random.rand() < 0.5:
     # Random vertical flip (50% chance)
+    if np.random.rand() < 0.5:
+        # Flip the image vertically (up-down)
+        img = np.flipud(img)
+        # Flip keypoint y-coordinates
         if len(keypoints) > 0:
             keypoints = keypoints.copy()
             keypoints[:, 1] = H - 1 - keypoints[:, 1]
@@ -423,8 +427,6 @@ class KeypointDataset(Dataset):
         """
         self.num_samples = num_samples
         self.image_shape = image_shape
-        self.generate_fn = generate_fn
-        self.generate_kwargs = generate_kwargs or {}
         self.use_homography_augment = use_homography_augment
         self.use_photometric_augment = use_photometric_augment
         self.use_geometric_augment = use_geometric_augment
@@ -438,6 +440,19 @@ class KeypointDataset(Dataset):
         if load_from_file is None and generate_fn is None:
             # raise ValueError("Either 'load_from_file' or 'generate_fn' must be provided")
             generate_fn = generate_synthetic_image
+            # Set default kwargs for generate_synthetic_image if not provided
+            if generate_kwargs is None:
+                # Default: generate grayscale images for training
+                generate_kwargs = {'width': W, 'height': H, 'grayscale': True}
+
+        # Set generate_fn and kwargs AFTER default assignment
+        self.generate_fn = generate_fn
+        self.generate_kwargs = generate_kwargs or {}
+
+        # Ensure grayscale=True is set if not specified (for training efficiency)
+        if 'grayscale' not in self.generate_kwargs and generate_fn == generate_synthetic_image:
+            self.generate_kwargs['grayscale'] = True
+
         # Remove use_homography from generate_kwargs if using augmentation
         if self.use_homography_augment and 'use_homography' in self.generate_kwargs:
             print("⚠️  Removing 'use_homography' from generate_kwargs (will apply as augmentation)")
