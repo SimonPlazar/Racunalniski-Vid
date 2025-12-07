@@ -28,8 +28,9 @@ def add_gaussian_noise(image, sigma=None):
     noisy = np.clip(noisy * 255, 0, 255).astype(np.uint8)
 
     # Apply slight Gaussian blur for smoothing
+    blur_sigma = random.uniform(0.1, 0.3)
     for i in range(3):
-        noisy[:, :, i] = gaussian_filter(noisy[:, :, i], sigma=0.5)
+        noisy[:, :, i] = gaussian_filter(noisy[:, :, i], sigma=blur_sigma)
 
     return noisy
 

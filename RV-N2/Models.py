@@ -3,6 +3,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 
+from Generator import generate_synthetic_image
+
 
 # ============================================================
 # RESNET
@@ -434,8 +436,8 @@ class KeypointDataset(Dataset):
 
         # Validate that either load_from_file or generate_fn is provided
         if load_from_file is None and generate_fn is None:
-            raise ValueError("Either 'load_from_file' or 'generate_fn' must be provided")
-
+            # raise ValueError("Either 'load_from_file' or 'generate_fn' must be provided")
+            generate_fn = generate_synthetic_image
         # Remove use_homography from generate_kwargs if using augmentation
         if self.use_homography_augment and 'use_homography' in self.generate_kwargs:
             print("⚠️  Removing 'use_homography' from generate_kwargs (will apply as augmentation)")
