@@ -500,13 +500,15 @@ class KeypointDataset(Dataset):
         print(f"✓ Saved {len(self.pregenerated_data)} samples to {filepath}")
 
     def __len__(self):
-        """Return large number for infinite iteration-based training."""
-        return 10**9
+        """Return actual number of pre-generated samples."""
+        if self.pregenerated_data is not None:
+            return len(self.pregenerated_data)
+        else:
+            return self.num_samples
 
     def __getitem__(self, idx):
         """
         Get training sample with augmentations.
-        Uses modulo indexing for infinite cycling.
 
         Returns:
             image: (1, H, W) tensor
@@ -515,9 +517,7 @@ class KeypointDataset(Dataset):
         # Get base image and keypoints
         if self.pregenerated_data is not None:
             # Use pregenerated or loaded data
-            # Cycle infinitely using modulo
-            actual_idx = idx % len(self.pregenerated_data)
-            img_gray, keypoints = self.pregenerated_data[actual_idx]
+            img_gray, keypoints = self.pregenerated_data[idx]
             img_gray = img_gray.copy()
             keypoints = keypoints.copy()
         else:
@@ -527,11 +527,6 @@ class KeypointDataset(Dataset):
                 img_gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
             else:
                 img_gray = img
-
-            # Resize if needed
-            H, W = self.image_shape
-            if img_gray.shape != (H, W):
-                img_gray = cv2.resize(img_gray, (W, H))
 
         # Apply augmentations in order:
         # 1. Homography (perspective transformation)
