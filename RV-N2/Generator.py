@@ -291,11 +291,12 @@ def generate_cube(width, height, randomize=True):
     back_np = np.array(back, dtype=np.float32)
 
     # Determine visible back vertices (outside or on-edge of front polygon)
+    padding = 5
     front_poly = front_np.astype(np.int32).reshape((-1, 1, 2))
     visible_back_idxs = []
     for idx, (x, y) in enumerate(back_np):
-        inside = cv2.pointPolygonTest(front_poly, (float(x), float(y)), False)
-        if inside <= 0:
+        dist = cv2.pointPolygonTest(front_poly, (float(x), float(y)), True)
+        if dist <= padding:
             visible_back_idxs.append(idx)
     visible_back_idxs = visible_back_idxs[:3]
 
@@ -557,6 +558,9 @@ def generate_synthetic_image(width=256, height=256, shape_type="random", use_hom
     bg_color = get_random_color()
     img = np.full((height, width, 3), bg_color, dtype=np.uint8)
 
+    # Initialize keypoints
+    keypoints = None
+
     # Choose random shape type if needed
     if shape_type == "random":
         shape_type = random.choice(["triangle", "quadrilateral", "star",
@@ -598,22 +602,31 @@ def generate_synthetic_image(width=256, height=256, shape_type="random", use_hom
             keypoints.append(points)
         keypoints = np.vstack(keypoints)
 
-    # Apply homography if requested
-    if use_homography:
-        while True:
-            max_retries = 20
-            retries_count = 0
+    else:
+        # Unknown shape type - default to triangle
+        keypoints, color, _ = generate_triangle(width, height)
+        color = get_random_color(min_diff=80, exclude_color=bg_color)
+        draw_simple_shape(img, keypoints, color, "triangle")
 
+    # Apply homography if requested (with proper retry logic)
+    if use_homography:
+        max_retries = 20
+        retries_count = 0
+
+        while retries_count < max_retries:
             H = generate_random_homography(width, height)
             img_warped, keypoints_warped = apply_homography(img, keypoints, H, width, height)
-            if len(keypoints) > 0:
+
+            # Accept if we retained at least some keypoints
+            if len(keypoints_warped) > 0:
                 img, keypoints = img_warped, keypoints_warped
                 break
 
             retries_count += 1
-            if retries_count >= max_retries:
-                print("⚠️  Homography application failed to retain keypoints after multiple attempts. Keeping original image.")
-                break
+
+        # If all retries failed, keep original
+        if retries_count >= max_retries:
+            pass  # Keep original img and keypoints
 
     # Keep only keypoints inside bounds
     keypoints = filter_keypoints_in_bounds(keypoints, width, height)
