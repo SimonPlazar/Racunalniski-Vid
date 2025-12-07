@@ -601,9 +601,18 @@ def generate_synthetic_image(width=256, height=256, shape_type="random", use_hom
     # Apply homography if requested
     if use_homography:
         while True:
+            max_retries = 20
+            retries_count = 0
+
             H = generate_random_homography(width, height)
-            img, keypoints = apply_homography(img, keypoints, H, width, height)
+            img_warped, keypoints_warped = apply_homography(img, keypoints, H, width, height)
             if len(keypoints) > 0:
+                img, keypoints = img_warped, keypoints_warped
+                break
+
+            retries_count += 1
+            if retries_count >= max_retries:
+                print("⚠️  Homography application failed to retain keypoints after multiple attempts. Keeping original image.")
                 break
 
     # Keep only keypoints inside bounds
