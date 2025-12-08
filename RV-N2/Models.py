@@ -33,10 +33,10 @@ class ResNetBlock(nn.Module):
 
         out = self.conv1(x)
         out = self.bn1(out)
-        # out = self.relu(out)
+        out = self.relu(out)
 
-        # out = self.conv2(out)
-        # out = self.bn2(out)
+        out = self.conv2(out)
+        out = self.bn2(out)
 
         out += residual
         out = self.relu(out)
@@ -192,70 +192,77 @@ def process_output_torch(logits, threshold=0.015):
     return heat, keypoints
 
 
-def prepare_training_target_basic(keypoints_list, image_shape):
+def prepare_training_target_basic(keypoints_list, image_shape, cell_size=8, sigma=1.0):
     """
-    Priprava učnih ciljev iz seznama ključnih točk - osnovni način.
+    Correct SuperPoint-style target generation.
 
     Args:
-        keypoints_list: list of (N, 2) numpy arrays z (x, y) koordinatami za vsak primer
-        image_shape: (H, W) velikost slike
+        keypoints_list : list of (N, 2) arrays of keypoints (x, y)
+        image_shape    : (H, W)
+        cell_size      : normally 8 for SuperPoint
+        sigma          : stddev for soft Gaussian inside each cell (1.0 recommended)
 
     Returns:
-        target: (B, 65, H/8, W/8) ciljni tenzor za učenje
+        target tensor (B, 65, H/8, W/8)
     """
+
     H, W = image_shape
-    assert H % 8 == 0 and W % 8 == 0, "Velikost slike mora biti deljiva z 8"
+    Hc, Wc = H // cell_size, W // cell_size
 
     B = len(keypoints_list)
-    Hc, Wc = H // 8, W // 8
-
     target = np.zeros((B, 65, Hc, Wc), dtype=np.float32)
 
+    # Precompute gaussian "pulse" inside an 8×8 cell
+    # centered at (sub_y, sub_x)
+    yy, xx = np.meshgrid(np.arange(cell_size), np.arange(cell_size), indexing='ij')
+
     for b, keypoints in enumerate(keypoints_list):
-        # 1. Ustvari masko s točkami
-        mask = np.zeros((H, W), dtype=np.float32)
 
-        if len(keypoints) > 0:
-            # Zaokrožimo koordinate
-            xs = np.clip(np.round(keypoints[:, 0]).astype(int), 0, W - 1)
-            ys = np.clip(np.round(keypoints[:, 1]).astype(int), 0, H - 1)
-            mask[ys, xs] = 1.0
+        if len(keypoints) == 0:
+            # no keypoints → whole map stays "no point"
+            continue
 
-        # 2. Reshape v (H/8, 8, W/8, 8)
-        mask_reshaped = mask.reshape(Hc, 8, Wc, 8)
+        for (x_f, y_f) in keypoints:
+            # ensure within bounds
+            if x_f < 0 or x_f >= W or y_f < 0 or y_f >= H:
+                continue
 
-        # 3. Permute v (H/8, W/8, 8, 8)
-        mask_permuted = np.transpose(mask_reshaped, (0, 2, 1, 3))
+            # DO NOT ROUND — SuperPoint uses FLOOR (integer pixel)
+            x = int(np.floor(x_f))
+            y = int(np.floor(y_f))
 
-        # 4. Reshape v (H/8, W/8, 64)
-        mask_flat = mask_permuted.reshape(Hc, Wc, 64)
+            # Which cell?
+            cell_x = x // cell_size
+            cell_y = y // cell_size
 
-        # 5. Obdelava konfliktov - za vsak cell (H/8, W/8)
-        for i in range(Hc):
-            for j in range(Wc):
-                cell = mask_flat[i, j]  # (64,)
-                active_indices = np.where(cell > 0)[0]
+            # Offset inside cell
+            sub_x = x % cell_size
+            sub_y = y % cell_size
 
-                if len(active_indices) > 1:
-                    # Več točk v istem cellu - ohrani naključno eno
-                    keep_idx = np.random.choice(active_indices)
-                    cell[:] = 0
-                    cell[keep_idx] = 1.0
-                elif len(active_indices) == 1:
-                    # Ena točka - vse OK
-                    pass
-                else:
-                    # Nobene točke - aktiviraj kanal 65 (kanal "ni točke")
-                    pass  # pustimo vse na 0, kanal 65 dodamo spodaj
+            # Compute 8×8 Gaussian centered at (sub_y, sub_x)
+            dist2 = (yy - sub_y)**2 + (xx - sub_x)**2
+            gaussian = np.exp(-0.5 * dist2 / (sigma * sigma))
 
-        # 6. Transponiraj v (64, H/8, W/8)
-        target[b, :64, :, :] = np.transpose(mask_flat, (2, 0, 1))
+            # Convert the 8×8 cell into a 64-D vector (flatten in row-major order)
+            gaussian_flat = gaussian.reshape(-1)  # (64,)
 
-        # 7. Dodaj kanal 65 - kjer nobeden od 64 kanalov ni aktiven
-        no_point = (target[b, :64, :, :].sum(axis=0) == 0).astype(np.float32)
-        target[b, 64, :, :] = no_point
+            # **Write into (64, Hc, Wc) target**
+            # If multiple points fall in same cell → keep the one with higher peak
+            existing = target[b, :64, cell_y, cell_x]
+            if existing.sum() > 0:
+                # Keep the one whose center is closest to the cell center
+                # i.e. larger gaussian peak
+                if gaussian_flat.max() > existing.max():
+                    target[b, :64, cell_y, cell_x] = gaussian_flat
+            else:
+                target[b, :64, cell_y, cell_x] = gaussian_flat
+
+        # Now fill channel 64 = "no point" class
+        occupied = target[b, :64, :, :].sum(axis=0) > 0
+        target[b, 64, :, :] = (~occupied).astype(np.float32)
 
     return torch.from_numpy(target)
+
 
 # Helper function to extract keypoint positions from target tensor
 def extract_keypoints_from_target(target_tensor):
@@ -370,7 +377,7 @@ def apply_geometric_augmentation(img, keypoints, image_shape):
         # Flip keypoint x-coordinates
         if len(keypoints) > 0:
             keypoints = keypoints.copy()
-            keypoints[:, 0] = W - 1 - keypoints[:, 0]
+            keypoints[:, 0] = (W - 1) - keypoints[:, 0]
 
     # Random vertical flip (50% chance)
     if np.random.rand() < 0.5:
@@ -379,7 +386,7 @@ def apply_geometric_augmentation(img, keypoints, image_shape):
         # Flip keypoint y-coordinates
         if len(keypoints) > 0:
             keypoints = keypoints.copy()
-            keypoints[:, 1] = H - 1 - keypoints[:, 1]
+            keypoints[:, 1] = (H - 1) - keypoints[:, 1]
 
     return img, keypoints
 
@@ -556,11 +563,11 @@ class KeypointDataset(Dataset):
         if self.use_photometric_augment:
             img_gray = apply_photometric_augmentation(img_gray)
 
-        # 3. Geometric (flips)
-        if self.use_geometric_augment:
-            img_gray, keypoints = apply_geometric_augmentation(
-                img_gray, keypoints, self.image_shape
-            )
+        # # 3. Geometric (flips)
+        # if self.use_geometric_augment:
+        #     img_gray, keypoints = apply_geometric_augmentation(
+        #         img_gray, keypoints, self.image_shape
+        #     )
 
         # Normalize to [0, 1]
         img_normalized = img_gray.astype(np.float32) / 255.0
