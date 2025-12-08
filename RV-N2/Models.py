@@ -3,7 +3,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 
-from Generator import generate_synthetic_image
+from scipy.ndimage import maximum_filter
+from Generator import generate_synthetic_image, generate_random_homography
 
 
 # ============================================================
@@ -240,7 +241,7 @@ def prepare_training_target_basic(keypoints_list, image_shape, cell_size=8, sigm
             sub_y = y % cell_size
 
             # Compute 8×8 Gaussian centered at (sub_y, sub_x)
-            dist2 = (yy - sub_y)**2 + (xx - sub_x)**2
+            dist2 = (yy - sub_y) ** 2 + (xx - sub_x) ** 2
             gaussian = np.exp(-0.5 * dist2 / (sigma * sigma))
 
             # Convert the 8×8 cell into a 64-D vector (flatten in row-major order)
@@ -295,6 +296,227 @@ def extract_keypoints_from_target(target_tensor):
                 keypoint_positions.append([x, y])
 
     return np.array(keypoint_positions) if len(keypoint_positions) > 0 else np.array([]).reshape(0, 2)
+
+
+# def detect_local_maxima(heatmap, threshold=0.015, neighborhood_size=9):
+#     """
+#     Detect local maxima in heatmap using maximum filter.
+#
+#     Args:
+#         heatmap: (H, W) numpy array
+#         threshold: Detection threshold
+#
+#     Returns:
+#         peaks: (N, 2) array of [x, y] coordinates
+#     """
+#     local_max = maximum_filter(heatmap, size=neighborhood_size)
+#     detected = (heatmap == local_max) & (heatmap > threshold)
+#
+#     ys, xs = np.where(detected)
+#     peaks = np.stack([xs, ys], axis=1) if len(xs) > 0 else np.empty((0, 2))
+#
+#     return peaks
+
+def detect_local_maxima(heatmap, threshold=0.015, nms_size=9, refine_radius=7):
+    """
+    Two-stage: Peak detection → weighted refinement.
+
+    Args:
+        heatmap: (H, W) numpy array
+        threshold: Detection threshold
+        nms_size: Neighborhood for initial peak detection (larger for blurred heatmaps)
+        refine_radius: Radius for weighted average refinement
+
+    Returns:
+        peaks: (N, 2) array of [x, y] coordinates
+    """
+    # Stage 1: Find peaks using maximum filter (robust to blur)
+    local_max = maximum_filter(heatmap, size=nms_size)
+    detected = (heatmap == local_max) & (heatmap > threshold)
+    ys, xs = np.where(detected)
+
+    if len(xs) == 0:
+        return np.empty((0, 2))
+
+    # Stage 2: Refine each peak using weighted average
+    H, W = heatmap.shape
+    peaks = []
+
+    for x, y in zip(xs, ys):
+        # Define local window
+        y_min = max(0, y - refine_radius)
+        y_max = min(H, y + refine_radius + 1)
+        x_min = max(0, x - refine_radius)
+        x_max = min(W, x + refine_radius + 1)
+
+        # Extract local region
+        local_heatmap = heatmap[y_min:y_max, x_min:x_max]
+        local_mask = local_heatmap > threshold
+
+        if local_mask.sum() == 0:
+            peaks.append([x, y])
+            continue
+
+        # Weighted average in local region
+        yy, xx = np.meshgrid(np.arange(y_min, y_max),
+                             np.arange(x_min, x_max), indexing='ij')
+        weights = local_heatmap[local_mask]
+        x_refined = np.average(xx[local_mask], weights=weights)
+        y_refined = np.average(yy[local_mask], weights=weights)
+
+        peaks.append([x_refined, y_refined])
+
+    return np.array(peaks)
+
+
+def homography_adaptation(model, image, num_iter=99, threshold=0.015, padding_ratio=0.3):
+    """
+    Homography adaptation WITHOUT border artifacts using padding strategy.
+
+    Strategy: Pad the input image, apply homographies to padded version,
+    then crop back to original size. This ensures the original region
+    always has valid pixels (no black borders).
+
+    Args:
+        model: KeypointNet model
+        image: (1, 1, H, W) tensor (grayscale, normalized [0,1])
+        num_iter: Number of random homographies (default 99)
+        threshold: Detection threshold for local maxima
+        padding_ratio: Ratio of padding to add (0.3 = 30% padding on each side)
+
+    Returns:
+        averaged: (1, 1, H, W) averaged heatmap
+        keypoints: (N, 2) array of detected keypoints [x, y]
+    """
+    device = image.device
+    B, C, H, W = image.shape
+
+    assert B == 1 and C == 1, "Expected single grayscale image (1, 1, H, W)"
+
+    # Calculate padding size
+    pad_h = int(H * padding_ratio)
+    pad_w = int(W * padding_ratio)
+
+    # Pad image (replicate border pixels to avoid black edges)
+    image_padded = F.pad(image, (pad_w, pad_w, pad_h, pad_h), mode='replicate')
+    _, _, H_pad, W_pad = image_padded.shape
+
+    print(f"Original size: {H}x{W}, Padded size: {H_pad}x{W_pad}")
+
+    # Accumulator for heatmaps (original size)
+    accumulated_heatmap = torch.zeros((1, 1, H, W), device=device)
+
+    model.eval()
+    with torch.no_grad():
+        # Iteration 0: Original image (identity homography)
+        print("Processing original image...")
+        heatmap_orig = model(image, return_logits=False)  # (1, 1, H, W)
+        accumulated_heatmap += heatmap_orig
+
+        # Iterations 1 to num_iter: Random homographies
+        for i in range(num_iter):
+            if (i + 1) % 20 == 0:
+                print(f"  Processed {i + 1}/{num_iter} homographies")
+
+            # Generate random homography for PADDED image
+            H_forward = generate_random_homography(W_pad, H_pad)
+            H_inverse = np.linalg.inv(H_forward)
+
+            # Convert to tensor
+            H_inv_tensor = torch.from_numpy(H_inverse).float().to(device)
+
+            # **STEP 1**: Warp PADDED image
+            warped_padded = warp_tensor_with_homography_simple(
+                image_padded, H_forward, (H_pad, W_pad)
+            )
+
+            # **STEP 2**: Crop warped image to center (original size)
+            warped_center = warped_padded[:, :, pad_h:pad_h + H, pad_w:pad_w + W]
+
+            # **STEP 3**: Get heatmap from center crop
+            heatmap_warped = model(warped_center, return_logits=False)  # (1, 1, H, W)
+
+            # **STEP 4**: Pad heatmap back to full size for inverse warping
+            heatmap_padded = F.pad(heatmap_warped, (pad_w, pad_w, pad_h, pad_h), mode='constant', value=0)
+
+            # **STEP 5**: Warp heatmap BACK using inverse homography
+            heatmap_unwarped_padded = warp_tensor_with_homography_simple(
+                heatmap_padded, H_inverse, (H_pad, W_pad)
+            )
+
+            # **STEP 6**: Crop unwarped heatmap to center
+            heatmap_unwarped = heatmap_unwarped_padded[:, :, pad_h:pad_h + H, pad_w:pad_w + W]
+
+            # **STEP 7**: Accumulate
+            accumulated_heatmap += heatmap_unwarped
+
+    # Average over all iterations
+    averaged = accumulated_heatmap / (num_iter + 1)
+
+    # Extract keypoints from averaged heatmap
+    heatmap_np = averaged.squeeze().cpu().numpy()
+    keypoints = detect_local_maxima(heatmap_np, threshold)
+
+    print(f"✓ Detected {len(keypoints)} keypoints after homography adaptation")
+
+    return averaged, keypoints
+
+
+def warp_tensor_with_homography_simple(tensor, H, output_size):
+    """
+    Simplified homography warping without valid mask tracking.
+
+    Args:
+        tensor: (B, C, H, W) tensor to warp
+        H: (3, 3) homography matrix (NumPy or PyTorch)
+        output_size: (H_out, W_out) output dimensions
+
+    Returns:
+        warped: (B, C, H_out, W_out) warped tensor
+    """
+    device = tensor.device
+    B, C, H_in, W_in = tensor.shape
+    H_out, W_out = output_size
+
+    # Convert H to tensor if needed
+    if isinstance(H, np.ndarray):
+        H = torch.from_numpy(H).float().to(device)
+
+    # Create normalized meshgrid for output image
+    y_grid, x_grid = torch.meshgrid(
+        torch.linspace(0, H_out - 1, H_out, device=device),
+        torch.linspace(0, W_out - 1, W_out, device=device),
+        indexing='ij'
+    )
+
+    # Stack into homogeneous coordinates (H_out, W_out, 3)
+    ones = torch.ones_like(x_grid)
+    grid_homogeneous = torch.stack([x_grid, y_grid, ones], dim=-1)
+
+    # Apply homography: p_src = H @ p_dst
+    grid_warped = torch.matmul(grid_homogeneous, H.T)  # (H_out, W_out, 3)
+
+    # Convert from homogeneous to Cartesian
+    grid_warped_xy = grid_warped[..., :2] / (grid_warped[..., 2:3] + 1e-8)
+
+    # Normalize to [-1, 1] for grid_sample
+    grid_normalized = torch.zeros_like(grid_warped_xy)
+    grid_normalized[..., 0] = 2.0 * grid_warped_xy[..., 0] / (W_in - 1) - 1.0
+    grid_normalized[..., 1] = 2.0 * grid_warped_xy[..., 1] / (H_in - 1) - 1.0
+
+    # Add batch dimension
+    grid_normalized = grid_normalized.unsqueeze(0).expand(B, -1, -1, -1)
+
+    # Apply warping with REPLICATE padding (no black borders!)
+    warped = F.grid_sample(
+        tensor,
+        grid_normalized,
+        mode='bilinear',
+        padding_mode='border',  # Key change: replicate border instead of zeros
+        align_corners=True
+    )
+
+    return warped
 
 
 # ============================================================
@@ -464,7 +686,7 @@ class KeypointDataset(Dataset):
         if self.use_homography_augment and 'use_homography' in self.generate_kwargs:
             print("⚠️  Removing 'use_homography' from generate_kwargs (will apply as augmentation)")
             self.generate_kwargs = {k: v for k, v in self.generate_kwargs.items()
-                                   if k != 'use_homography'}
+                                    if k != 'use_homography'}
 
         # Pre-generate or load base samples
         self.pregenerated_data = None
@@ -579,4 +801,3 @@ class KeypointDataset(Dataset):
         target = prepare_training_target_basic([keypoints], self.image_shape)[0]
 
         return image_tensor, target
-
