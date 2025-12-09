@@ -4,22 +4,22 @@ import random
 from scipy.ndimage import gaussian_filter
 
 
-# Utility functions
+# ============================================================================
+# Utility Functions
+# ============================================================================
 
 def get_random_color(min_diff=50, exclude_color=None, grayscale=None):
-    """
-    Generate random color (RGB tuple) or brightness (single-value tuple).
+    """Generate a random color or grayscale value.
 
     Args:
-        min_diff: Minimum difference from exclude_color
-        exclude_color: Color/brightness to avoid (tuple for RGB, single-value tuple for grayscale)
-        grayscale: If True, generate grayscale; if False, RGB; if None, auto-detect from exclude_color
+        min_diff: Minimum color difference from excluded color
+        exclude_color: Color to avoid
+        grayscale: Whether to generate grayscale (auto-detect if None)
 
     Returns:
-        Grayscale: (brightness,) - single-value tuple
-        RGB: (B, G, R) - three-value tuple
+        Color tuple (B,G,R) for RGB or (brightness,) for grayscale
     """
-    # Auto-detect grayscale mode from exclude_color if not specified
+    # Auto-detect grayscale from exclude_color if not specified
     if grayscale is None:
         if exclude_color is not None:
             grayscale = len(exclude_color) == 1 if isinstance(exclude_color, tuple) else False
@@ -27,11 +27,10 @@ def get_random_color(min_diff=50, exclude_color=None, grayscale=None):
             grayscale = False
 
     if grayscale:
-        # Generate grayscale brightness value
+        # Generate single brightness value
         while True:
             brightness = random.randint(0, 255)
             if exclude_color is not None:
-                # exclude_color is (brightness,) tuple
                 exclude_val = exclude_color[0] if isinstance(exclude_color, tuple) else exclude_color
                 diff = abs(brightness - exclude_val)
                 if diff < min_diff:
@@ -49,24 +48,22 @@ def get_random_color(min_diff=50, exclude_color=None, grayscale=None):
 
 
 def add_gaussian_noise(image, sigma=None):
-    """Add Gaussian noise to image (handles both RGB and grayscale)."""
+    """Add Gaussian noise to the image for realism."""
     if sigma is None:
         sigma = random.uniform(0.01, 0.05)
 
+    # Add noise
     noisy = image.astype(np.float32) / 255.0
     noise = np.random.normal(0, sigma, image.shape)
     noisy = noisy + noise
     noisy = np.clip(noisy * 255, 0, 255).astype(np.uint8)
 
-    # Apply slight Gaussian blur for smoothing
+    # Apply slight blur for smoothing
     blur_sigma = random.uniform(0.1, 0.3)
 
-    # Check if grayscale or RGB
     if len(image.shape) == 2:
-        # Grayscale
         noisy = gaussian_filter(noisy, sigma=blur_sigma)
     else:
-        # RGB
         for i in range(3):
             noisy[:, :, i] = gaussian_filter(noisy[:, :, i], sigma=blur_sigma)
 
@@ -74,27 +71,31 @@ def add_gaussian_noise(image, sigma=None):
 
 
 def check_overlap(mask1, mask2):
-    """Check if two masks overlap."""
+    """Check if two binary masks overlap."""
     return np.any(np.logical_and(mask1, mask2))
 
 
-# Simple shape generators (triangles, quadrilaterals, stars)
+# ============================================================================
+# Simple Shape Generators (triangles, quadrilaterals, stars)
+# ============================================================================
 
 def generate_triangle(width, height):
-    """Generate a triangle with 3 keypoints."""
+    """Generate a triangle shape with 3 keypoints."""
     margin = 30
+
     # Generate center point
     center_x = random.randint(margin + 40, width - margin - 40)
     center_y = random.randint(margin + 40, height - margin - 40)
 
-    # Generate triangle with minimum size
-    min_size = min(width, height) * 0.3  # At least 30% of image dimension
+    # Make sure triangle is at least 30% of image size
+    min_size = min(width, height) * 0.3
     max_size = min(center_x - margin, width - center_x - margin,
                    center_y - margin, height - center_y - margin)
 
+    # Generate 3 points around the center
     points = []
     for i in range(3):
-        angle = (i * 2 * np.pi / 3) + random.uniform(-0.3, 0.3)  # Roughly evenly spaced
+        angle = (i * 2 * np.pi / 3) + random.uniform(-0.3, 0.3)
         radius = random.uniform(min_size, max_size)
         x = center_x + radius * np.cos(angle)
         y = center_y + radius * np.sin(angle)
@@ -105,20 +106,22 @@ def generate_triangle(width, height):
 
 
 def generate_quadrilateral(width, height):
-    """Generate a quadrilateral with 4 keypoints."""
+    """Generate a quadrilateral shape with 4 keypoints."""
     margin = 30
+
     # Generate center point
     center_x = random.randint(margin + 40, width - margin - 40)
     center_y = random.randint(margin + 40, height - margin - 40)
 
-    # Generate quadrilateral with minimum size
-    min_size = min(width, height) * 0.3  # At least 30% of image dimension
+    # Make sure quad is at least 30% of image size
+    min_size = min(width, height) * 0.3
     max_size = min(center_x - margin, width - center_x - margin,
                    center_y - margin, height - center_y - margin)
 
+    # Generate 4 points around the center
     points = []
     for i in range(4):
-        angle = (i * 2 * np.pi / 4) + random.uniform(-0.2, 0.2)  # Roughly evenly spaced
+        angle = (i * 2 * np.pi / 4) + random.uniform(-0.2, 0.2)
         radius = random.uniform(min_size, max_size)
         x = center_x + radius * np.cos(angle)
         y = center_y + radius * np.sin(angle)
@@ -129,61 +132,56 @@ def generate_quadrilateral(width, height):
 
 
 def generate_star(width, height, num_points=5, min_angle_deg=30):
-    """Generate a star with center + outer points as keypoints.
+    """Generate a star shape with center + outer points as keypoints.
 
-    The star is constructed in polar coordinates around a center chosen first.
-    `min_angle_deg` enforces a minimum angular separation between outer points by
-    splitting the circle into equal sectors and jittering each sector center.
+    Args:
+        width, height: Image dimensions
+        num_points: Number of star points (default 5)
+        min_angle_deg: Minimum angle between points in degrees
 
-    Returns an array with the first point being the center and the following
-    points being the outer vertices in order.
+    Returns:
+        Array with first point = center, rest = outer vertices
     """
-    # Keep a safe margin so the star doesn't touch the image border
+    # Keep margin so star doesn't touch edges
     margin = 40
     center_x = random.randint(margin + 10, max(margin + 10, width - margin - 10))
     center_y = random.randint(margin + 10, max(margin + 10, height - margin - 10))
 
-    # Minimum and maximum radius for outer points
-    min_radius = int(max(5, min(width, height) * 0.12))  # at least ~12% of min dim
-    # maximum radius limited by distance to edges from center and margin
+    # Calculate radius range for outer points
+    min_radius = int(max(5, min(width, height) * 0.12))
     max_radius_x = min(center_x - margin, width - margin - center_x)
     max_radius_y = min(center_y - margin, height - margin - center_y)
     max_radius = int(max(8, min(max_radius_x, max_radius_y)))
 
-    # In deg -> rad
+    # Convert to radians
     min_angle_rad = np.deg2rad(float(min_angle_deg))
-
-    # Sector width
     sector = 2 * np.pi / float(max(1, num_points))
 
-    # If sector is smaller than required minimum separation, clamp min angle
+    # Ensure minimum separation
     if min_angle_rad > sector * 0.9:
-        # ensure there is at least some jitter space
         min_angle_rad = sector * 0.5
 
-    # jitter bound so that two adjacent points remain separated at least min_angle_rad
     jitter_bound = max(0.0, (sector - min_angle_rad) / 2.0)
 
+    # Generate angles with jitter
     angles = []
     for k in range(num_points):
         base = k * sector
         jitter = random.uniform(-jitter_bound, jitter_bound)
-        angle = base + sector / 2.0 + jitter  # center of sector plus jitter
+        angle = base + sector / 2.0 + jitter
         angles.append(angle)
 
-    # Sort angles to form a consistent polygon order (optional)
+    # Sort angles for consistent ordering
     angles = np.array(angles)
     angles = np.mod(angles, 2 * np.pi)
     angles.sort()
 
-    points = [[float(center_x), float(center_y)]]  # center first
+    # First point is the center
+    points = [[float(center_x), float(center_y)]]
 
+    # Add outer points
     for a in angles:
-        # choose radius uniformly in allowed range
-        if max_radius <= min_radius:
-            r = min_radius
-        else:
-            r = random.randint(min_radius, max_radius)
+        r = min_radius if max_radius <= min_radius else random.randint(min_radius, max_radius)
         x = center_x + r * np.cos(a)
         y = center_y + r * np.sin(a)
         points.append([x, y])
@@ -193,7 +191,7 @@ def generate_star(width, height, num_points=5, min_angle_deg=30):
 
 
 def draw_simple_shape(img, points, color, shape_type):
-    """Draw simple shape (triangle, quad, star) on image."""
+    """Draw simple shapes on image."""
     if shape_type in ["triangle", "quadrilateral"]:
         cv2.fillPoly(img, [points.astype(np.int32)], color)
     elif shape_type == "star":
@@ -203,44 +201,44 @@ def draw_simple_shape(img, points, color, shape_type):
             cv2.line(img, tuple(center), tuple(pt), color, 2, cv2.LINE_AA)
 
 
-# Complex shape generators (checkerboard, cube)
+# ============================================================================
+# Complex Shape Generators (checkerboard, cube)
+# ============================================================================
 
 def generate_checkerboard(width, height, rows=4, cols=5, randomize=True):
-    """Generate checkerboard intersections (keypoints) so the board spans the image,
-    with margins determined by the limiting axis (shorter side relative to rows/cols).
+    """Generate checkerboard pattern with intersection points as keypoints.
 
-    - This version enforces a fixed margin of 40 pixels on all sides so the board
-      always stays inside that safe area. The board then fills as much of the
-      remaining area as possible and is centered inside the margin.
+    The board fills the image with a fixed 40px margin on all sides.
+    Returns grid intersection points (rows+1 x cols+1).
     """
-    # Ensure sensible integer counts
+    # Ensure valid counts
     rows = max(1, int(rows))
     cols = max(1, int(cols))
 
-    # Fixed margin required by the user
+    # Fixed margin
     margin = 40
 
-    # Compute available area inside margins
+    # Calculate available space
     avail_w = max(1, width - 2 * margin)
     avail_h = max(1, height - 2 * margin)
 
-    # Compute per-cell size from the limiting axis so the board fills the available area
+    # Calculate cell size
     cell_w = avail_w / float(cols)
     cell_h = avail_h / float(rows)
     cell_size = int(max(2, np.floor(min(cell_w, cell_h))))
 
-    # Recompute board size and center it inside the margin area
+    # Calculate board dimensions and center it
     board_width = cell_size * cols
     board_height = cell_size * rows
 
     origin_x = margin + int((avail_w - board_width) / 2)
     origin_y = margin + int((avail_h - board_height) / 2)
 
-    # Safety clamp origin to image
+    # Safety clamp
     origin_x = max(0, origin_x)
     origin_y = max(0, origin_y)
 
-    # Generate intersection points (rows+1 x cols+1 grid)
+    # Generate intersection points (grid)
     keypoints = []
     for i in range(rows + 1):
         for j in range(cols + 1):
@@ -265,7 +263,7 @@ def generate_checkerboard(width, height, rows=4, cols=5, randomize=True):
 
 
 def draw_checkerboard(img, keypoints, params, color1, color2):
-    """Draw checkerboard given params (origin, cell_size, rows, cols) and colors."""
+    """Draw checkerboard pattern with alternating colors."""
     rows = params["rows"]
     cols = params["cols"]
     origin_x = params["origin_x"]
@@ -429,10 +427,13 @@ def draw_cube(img, keypoints, params, cube_color, line_color):
     # Stronger outline for front face
     cv2.polylines(img, [front], isClosed=True, color=line_color, thickness=2, lineType=cv2.LINE_AA)
 
-# Multi-shape generation with overlap detection
+
+# ============================================================================
+# Multi-Shape Generation
+# ============================================================================
 
 def generate_multiple_shapes(width, height, num_shapes=3):
-    """Generate multiple non-overlapping simple shapes."""
+    """Generate multiple non-overlapping shapes in one image."""
     shapes_data = []
     masks = []
 
@@ -480,10 +481,12 @@ def generate_multiple_shapes(width, height, num_shapes=3):
     return shapes_data
 
 
-# Homography functions
+# ============================================================================
+# Homography Transformations
+# ============================================================================
 
 def generate_random_homography(width, height, margin_ratio=0.2):
-    """Generate random homography transformation."""
+    """Generate a random homography (perspective) transformation."""
     margin = int(min(width, height) * margin_ratio)
 
     # Define 4 random points in the image (one in each quadrant)
@@ -559,21 +562,24 @@ def filter_keypoints_in_bounds(keypoints, width, height):
     return keypoints[mask]
 
 
-# Main dataset generator
+# ============================================================================
+# Main Image Generation Function
+# ============================================================================
 
 def generate_synthetic_image(width=256, height=256, shape_type="random", use_homography=False, grayscale=False):
-    """
-    Generate a synthetic image with keypoints.
+    """Generate a synthetic image with known keypoint locations.
 
     Parameters:
-    - width, height: Image dimensions (should be divisible by 8)
-    - shape_type: "triangle", "quadrilateral", "star", "checkerboard", "cube", "multiple", "random"
-    - use_homography: Whether to apply random homography transformation
-    - grayscale: If True, generate grayscale image; if False, generate RGB image
+        width, height: Image dimensions (must be divisible by 8)
+        shape_type: Type of shape to generate
+                   Options: "triangle", "quadrilateral", "star", "checkerboard",
+                           "cube", "multiple", "random"
+        use_homography: Whether to apply random perspective transformation
+        grayscale: Generate grayscale (True) or RGB (False) image
 
     Returns:
-    - img: Grayscale (H, W) or RGB (H, W, 3) image as uint8
-    - keypoints: Nx2 array of keypoint locations
+        img: Image as uint8 array (H,W) or (H,W,3)
+        keypoints: Array of keypoint coordinates (N, 2)
     """
     # Ensure dimensions are divisible by 8
     width = (width // 8) * 8
@@ -661,18 +667,18 @@ def generate_synthetic_image(width=256, height=256, shape_type="random", use_hom
         if len(keypoints) > 0:
             keypoints = np.vstack(keypoints)
         else:
-            # Fallback to triangle if no shapes were generated
+            # Fallback: generate a triangle if nothing was created
             keypoints, _ = generate_triangle(width, height)
             color = get_random_color(min_diff=100, exclude_color=bg_color, grayscale=grayscale)
             draw_simple_shape(img, keypoints, color, "triangle")
 
     else:
-        # Unknown shape type - default to triangle
+        # Unknown shape - default to triangle
         keypoints, _ = generate_triangle(width, height)
         color = get_random_color(min_diff=100, exclude_color=bg_color, grayscale=grayscale)
         draw_simple_shape(img, keypoints, color, "triangle")
 
-    # Apply homography if requested (with proper retry logic)
+    # Apply homography transformation if requested
     if use_homography:
         max_retries = 20
         retries_count = 0
@@ -681,21 +687,24 @@ def generate_synthetic_image(width=256, height=256, shape_type="random", use_hom
             H = generate_random_homography(width, height)
             img_warped, keypoints_warped = apply_homography(img, keypoints, H, width, height)
 
-            # Accept if we retained at least some keypoints
+            # Accept if we kept at least some keypoints
             if len(keypoints_warped) > 0:
                 img, keypoints = img_warped, keypoints_warped
                 break
 
             retries_count += 1
 
-        # If all retries failed, keep original
-        if retries_count >= max_retries:
-            pass  # Keep original img and keypoints
+        # If all retries failed, keep original image
 
-    # Keep only keypoints inside bounds
+    # Filter out any keypoints outside image bounds
     keypoints = filter_keypoints_in_bounds(keypoints, width, height)
 
-    # Add Gaussian noise
+    # Add Gaussian noise for realism
     img = add_gaussian_noise(img)
 
     return img, keypoints
+
+
+
+
+

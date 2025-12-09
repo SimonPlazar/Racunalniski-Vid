@@ -11,6 +11,8 @@ from Generator import generate_synthetic_image, generate_random_homography
 # RESNET
 # ============================================================
 class ResNetBlock(nn.Module):
+    """Basic ResNet block with skip connection."""
+
     def __init__(self, in_channels, out_channels=None, stride=1):
         super().__init__()
         out_channels = out_channels or in_channels
@@ -23,7 +25,7 @@ class ResNetBlock(nn.Module):
 
         self.relu = nn.ReLU(inplace=True)
 
-        # shortcut, če se spremeni dimenzija
+        # Shortcut connection if dimensions change
         if in_channels != out_channels or stride != 1:
             self.shortcut = nn.Conv2d(in_channels, out_channels, 1, stride=stride)
         else:
@@ -44,9 +46,8 @@ class ResNetBlock(nn.Module):
         return out
 
 
-# Encoder
-
 class KeypointEncoder(nn.Module):
+    """Encoder that downsamples image to 1/8 resolution."""
     def __init__(self):
         super().__init__()
 
@@ -142,50 +143,51 @@ class KeypointNet(nn.Module):
         return heat
 
 
-# ============================================================
-# KEYPOINT DETECTION UTILITIES
-# ============================================================
+# ============================================================================
+# Keypoint Detection Utilities
+# ============================================================================
 
 def process_output_torch(logits, threshold=0.015):
-    """
-    Verzija z uporabo PyTorch PixelShuffle (ekvivalentno TensorFlow depth_to_space).
+    """Process network output to get heatmap and keypoints.
+
+    Uses PyTorch PixelShuffle (equivalent to TensorFlow depth_to_space).
 
     Args:
-        logits: (B, 65, H/8, W/8) izhod mreže
-        threshold: prag za detekcijo točk
+        logits: (B, 65, H/8, W/8) network output
+        threshold: Detection threshold
 
     Returns:
-        heat_map: (B, 1, H, W) verjetnostna mapa
-        keypoints: list of (N, 2) numpy arrays z (x, y) koordinatami
+        heat_map: (B, 1, H, W) probability heatmap
+        keypoints: List of (N, 2) numpy arrays with (x, y) coordinates
     """
     B, C, Hc, Wc = logits.shape
     assert C == 65, f"Expected 65 channels, got {C}"
 
-    # 1. Softmax po kanalih
+    # 1. Softmax over channels
     heat = F.softmax(logits, dim=1)  # (B, 65, H/8, W/8)
 
-    # 2. Odstranimo zadnji kanal
+    # 2. Remove "no point" channel
     heat = heat[:, :64, :, :]  # (B, 64, H/8, W/8)
 
     # 3. PixelShuffle (depth_to_space)
     heat = F.pixel_shuffle(heat, upscale_factor=8)  # (B, 1, H, W)
 
-    # 4. Squeeze če želimo (B, H, W)
-    heat_squeezed = heat.squeeze(1)  # (B, H, W)
+    # 4. Squeeze to (B, H, W)
+    heat_squeezed = heat.squeeze(1)
 
-    # 5. Iskanje lokalnih maksimumov
+    # 5. Find local maxima
     keypoints = []
     heat_np = heat_squeezed.detach().cpu().numpy()
 
     for i in range(B):
         heat_i = heat_np[i]
 
-        # Lokalni maksimumi
+        # Detect local maxima
         from scipy.ndimage import maximum_filter
         local_max = maximum_filter(heat_i, size=3)
         detected = (heat_i == local_max) & (heat_i > threshold)
 
-        # Koordinate
+        # Get coordinates
         ys, xs = np.where(detected)
         kpts = np.stack([xs, ys], axis=1) if len(xs) > 0 else np.empty((0, 2))
         keypoints.append(kpts)
@@ -194,17 +196,19 @@ def process_output_torch(logits, threshold=0.015):
 
 
 def prepare_training_target_basic(keypoints_list, image_shape, cell_size=8, sigma=1.0):
-    """
-    Correct SuperPoint-style target generation.
+    """Generate training target tensor using SuperPoint-style encoding.
+
+    Converts keypoint coordinates to 65-channel representation where each 8x8
+    cell can contain one keypoint at any of 64 positions, plus a "no point" class.
 
     Args:
-        keypoints_list : list of (N, 2) arrays of keypoints (x, y)
-        image_shape    : (H, W)
-        cell_size      : normally 8 for SuperPoint
-        sigma          : stddev for soft Gaussian inside each cell (1.0 recommended)
+        keypoints_list: List of (N, 2) arrays of keypoints (x, y)
+        image_shape: (H, W) image dimensions
+        cell_size: Cell size for spatial binning (default 8)
+        sigma: Standard deviation for Gaussian pulse (default 1.0)
 
     Returns:
-        target tensor (B, 65, H/8, W/8)
+        Target tensor (B, 65, H/8, W/8)
     """
 
     H, W = image_shape
@@ -213,80 +217,75 @@ def prepare_training_target_basic(keypoints_list, image_shape, cell_size=8, sigm
     B = len(keypoints_list)
     target = np.zeros((B, 65, Hc, Wc), dtype=np.float32)
 
-    # Precompute gaussian "pulse" inside an 8×8 cell
-    # centered at (sub_y, sub_x)
+    # Precompute Gaussian pulse for 8x8 cell
     yy, xx = np.meshgrid(np.arange(cell_size), np.arange(cell_size), indexing='ij')
 
     for b, keypoints in enumerate(keypoints_list):
 
         if len(keypoints) == 0:
-            # no keypoints → whole map stays "no point"
+            # No keypoints - entire map stays "no point"
             continue
 
         for (x_f, y_f) in keypoints:
-            # ensure within bounds
+            # Ensure keypoint is within bounds
             if x_f < 0 or x_f >= W or y_f < 0 or y_f >= H:
                 continue
 
-            # DO NOT ROUND — SuperPoint uses FLOOR (integer pixel)
+            # Floor to get pixel location (SuperPoint uses floor, not round)
             x = int(np.floor(x_f))
             y = int(np.floor(y_f))
 
-            # Which cell?
+            # Which cell does this pixel belong to?
             cell_x = x // cell_size
             cell_y = y // cell_size
 
-            # Offset inside cell
+            # Position within the 8x8 cell
             sub_x = x % cell_size
             sub_y = y % cell_size
 
-            # Compute 8×8 Gaussian centered at (sub_y, sub_x)
+            # Generate Gaussian centered at (sub_y, sub_x)
             dist2 = (yy - sub_y) ** 2 + (xx - sub_x) ** 2
             gaussian = np.exp(-0.5 * dist2 / (sigma * sigma))
 
-            # Convert the 8×8 cell into a 64-D vector (flatten in row-major order)
-            gaussian_flat = gaussian.reshape(-1)  # (64,)
+            # Flatten to 64-D vector (row-major order)
+            gaussian_flat = gaussian.reshape(-1)
 
-            # **Write into (64, Hc, Wc) target**
-            # If multiple points fall in same cell → keep the one with higher peak
+            # Write into target (keep stronger response if multiple points in same cell)
             existing = target[b, :64, cell_y, cell_x]
             if existing.sum() > 0:
-                # Keep the one whose center is closest to the cell center
-                # i.e. larger gaussian peak
+                # Keep the one with higher peak
                 if gaussian_flat.max() > existing.max():
                     target[b, :64, cell_y, cell_x] = gaussian_flat
             else:
                 target[b, :64, cell_y, cell_x] = gaussian_flat
 
-        # Now fill channel 64 = "no point" class
+        # Fill channel 64 = "no point" class
         occupied = target[b, :64, :, :].sum(axis=0) > 0
         target[b, 64, :, :] = (~occupied).astype(np.float32)
 
     return torch.from_numpy(target)
 
 
-# Helper function to extract keypoint positions from target tensor
 def extract_keypoints_from_target(target_tensor):
-    """
-    Extract keypoint positions from target tensor.
+    """Extract keypoint positions from training target tensor.
 
     Args:
         target_tensor: (65, H/8, W/8) target tensor
 
     Returns:
-        keypoint_positions: List of [x, y] positions in image coordinates
+        keypoint_positions: Array of [x, y] positions in image coordinates
     """
     target_np = target_tensor.numpy() if hasattr(target_tensor, 'numpy') else target_tensor
 
-    Hc, Wc = target_np.shape[1], target_np.shape[2]  # Downsampled dimensions (32, 32)
+    Hc, Wc = target_np.shape[1], target_np.shape[2]
     keypoint_positions = []
 
     for h in range(Hc):
         for w in range(Wc):
-            # Check if any of the 64 spatial channels are active (not the "no point" channel)
+            # Check if any of the 64 spatial channels are active
             cell_data = target_np[:64, h, w]
             if cell_data.sum() > 0:
-                # Find which position in the 8x8 cell is active
+                # Find which position in the 8x8 cell is most active
                 active_idx = np.argmax(cell_data)
                 # Convert to image coordinates
                 sub_y = active_idx // 8
@@ -298,33 +297,13 @@ def extract_keypoints_from_target(target_tensor):
     return np.array(keypoint_positions) if len(keypoint_positions) > 0 else np.array([]).reshape(0, 2)
 
 
-# def detect_local_maxima(heatmap, threshold=0.015, neighborhood_size=9):
-#     """
-#     Detect local maxima in heatmap using maximum filter.
-#
-#     Args:
-#         heatmap: (H, W) numpy array
-#         threshold: Detection threshold
-#
-#     Returns:
-#         peaks: (N, 2) array of [x, y] coordinates
-#     """
-#     local_max = maximum_filter(heatmap, size=neighborhood_size)
-#     detected = (heatmap == local_max) & (heatmap > threshold)
-#
-#     ys, xs = np.where(detected)
-#     peaks = np.stack([xs, ys], axis=1) if len(xs) > 0 else np.empty((0, 2))
-#
-#     return peaks
-
 def detect_local_maxima(heatmap, threshold=0.015, nms_size=9, refine_radius=7):
-    """
-    Two-stage: Peak detection → weighted refinement.
+    """Two-stage keypoint detection: peak finding + refinement.
 
     Args:
         heatmap: (H, W) numpy array
         threshold: Detection threshold
-        nms_size: Neighborhood for initial peak detection (larger for blurred heatmaps)
+        nms_size: Neighborhood size for peak detection (larger for blurred heatmaps)
         refine_radius: Radius for weighted average refinement
 
     Returns:
@@ -370,19 +349,18 @@ def detect_local_maxima(heatmap, threshold=0.015, nms_size=9, refine_radius=7):
 
 
 def homography_adaptation(model, image, num_iter=99, threshold=0.015, padding_ratio=0.3):
-    """
-    Homography adaptation WITHOUT border artifacts using padding strategy.
+    """Apply homography adaptation for improved keypoint detection.
 
-    Strategy: Pad the input image, apply homographies to padded version,
-    then crop back to original size. This ensures the original region
-    always has valid pixels (no black borders).
+    Uses padding strategy to avoid border artifacts. The image is padded before
+    warping, then cropped back to original size. This ensures all regions have
+    valid data without black borders.
 
     Args:
         model: KeypointNet model
         image: (1, 1, H, W) tensor (grayscale, normalized [0,1])
         num_iter: Number of random homographies (default 99)
         threshold: Detection threshold for local maxima
-        padding_ratio: Ratio of padding to add (0.3 = 30% padding on each side)
+        padding_ratio: Padding ratio (0.3 = 30% padding on each side)
 
     Returns:
         averaged: (1, 1, H, W) averaged heatmap
@@ -397,18 +375,18 @@ def homography_adaptation(model, image, num_iter=99, threshold=0.015, padding_ra
     pad_h = int(H * padding_ratio)
     pad_w = int(W * padding_ratio)
 
-    # Pad image (replicate border pixels to avoid black edges)
+    # Pad image (replicate border to avoid black edges)
     image_padded = F.pad(image, (pad_w, pad_w, pad_h, pad_h), mode='replicate')
     _, _, H_pad, W_pad = image_padded.shape
 
     print(f"Original size: {H}x{W}, Padded size: {H_pad}x{W_pad}")
 
-    # Accumulator for heatmaps (original size)
+    # Accumulator for averaged heatmap
     accumulated_heatmap = torch.zeros((1, 1, H, W), device=device)
 
     model.eval()
     with torch.no_grad():
-        # Iteration 0: Original image (identity homography)
+        # Iteration 0: Original image (identity)
         print("Processing original image...")
         heatmap_orig = model(image, return_logits=False)  # (1, 1, H, W)
         accumulated_heatmap += heatmap_orig
@@ -418,36 +396,36 @@ def homography_adaptation(model, image, num_iter=99, threshold=0.015, padding_ra
             if (i + 1) % 20 == 0:
                 print(f"  Processed {i + 1}/{num_iter} homographies")
 
-            # Generate random homography for PADDED image
+            # Generate random homography for padded image
             H_forward = generate_random_homography(W_pad, H_pad)
             H_inverse = np.linalg.inv(H_forward)
 
             # Convert to tensor
             H_inv_tensor = torch.from_numpy(H_inverse).float().to(device)
 
-            # **STEP 1**: Warp PADDED image
+            # Step 1: Warp padded image
             warped_padded = warp_tensor_with_homography_simple(
                 image_padded, H_forward, (H_pad, W_pad)
             )
 
-            # **STEP 2**: Crop warped image to center (original size)
+            # Step 2: Crop to center (original size)
             warped_center = warped_padded[:, :, pad_h:pad_h + H, pad_w:pad_w + W]
 
-            # **STEP 3**: Get heatmap from center crop
+            # Step 3: Get heatmap from center crop
             heatmap_warped = model(warped_center, return_logits=False)  # (1, 1, H, W)
 
-            # **STEP 4**: Pad heatmap back to full size for inverse warping
+            # Step 4: Pad heatmap back to full size
             heatmap_padded = F.pad(heatmap_warped, (pad_w, pad_w, pad_h, pad_h), mode='constant', value=0)
 
-            # **STEP 5**: Warp heatmap BACK using inverse homography
+            # Step 5: Warp heatmap back using inverse homography
             heatmap_unwarped_padded = warp_tensor_with_homography_simple(
                 heatmap_padded, H_inverse, (H_pad, W_pad)
             )
 
-            # **STEP 6**: Crop unwarped heatmap to center
+            # Step 6: Crop unwarped heatmap to center
             heatmap_unwarped = heatmap_unwarped_padded[:, :, pad_h:pad_h + H, pad_w:pad_w + W]
 
-            # **STEP 7**: Accumulate
+            # Step 7: Accumulate
             accumulated_heatmap += heatmap_unwarped
 
     # Average over all iterations
@@ -463,8 +441,7 @@ def homography_adaptation(model, image, num_iter=99, threshold=0.015, padding_ra
 
 
 def warp_tensor_with_homography_simple(tensor, H, output_size):
-    """
-    Simplified homography warping without valid mask tracking.
+    """Warp tensor using homography transformation.
 
     Args:
         tensor: (B, C, H, W) tensor to warp
@@ -507,35 +484,30 @@ def warp_tensor_with_homography_simple(tensor, H, output_size):
     # Add batch dimension
     grid_normalized = grid_normalized.unsqueeze(0).expand(B, -1, -1, -1)
 
-    # Apply warping with REPLICATE padding (no black borders!)
+    # Apply warping with replicate padding (no black borders)
     warped = F.grid_sample(
         tensor,
         grid_normalized,
         mode='bilinear',
-        padding_mode='border',  # Key change: replicate border instead of zeros
+        padding_mode='border',  # Replicate border instead of zeros
         align_corners=True
     )
 
     return warped
 
 
-# ============================================================
-# DATASET AUGMENTATION FUNCTIONS
-# ============================================================
-
-from torch.utils.data import Dataset
-import cv2
-
+# ============================================================================
+# Data Augmentation Functions
+# ============================================================================
 
 def apply_homography_augmentation(img, keypoints, image_shape, max_retries=10):
-    """
-    Apply random homography transformation to image and keypoints.
+    """Apply random homography transformation to image and keypoints.
 
     Args:
         img: Grayscale image (H, W)
         keypoints: (N, 2) array of keypoint coordinates
         image_shape: (H, W) tuple
-        max_retries: Maximum number of retry attempts
+        max_retries: Maximum retry attempts
 
     Returns:
         Augmented image and keypoints (or original if all attempts fail)
@@ -563,14 +535,15 @@ def apply_homography_augmentation(img, keypoints, image_shape, max_retries=10):
 
 
 def apply_photometric_augmentation(img):
-    """
-    Apply photometric augmentations: brightness and contrast adjustments.
+    """Apply photometric augmentations (brightness and contrast).
+
+    Args:
         img: Grayscale image (H, W) as uint8
 
     Returns:
         Augmented image
     """
-    # Random brightness adjustment
+    # Random brightness adjustment (50% chance)
     if np.random.rand() < 0.5:
         factor = np.random.uniform(0.7, 1.3)
         img = np.clip(img.astype(np.float32) * factor, 0, 255).astype(np.uint8)
@@ -579,8 +552,7 @@ def apply_photometric_augmentation(img):
 
 
 def apply_geometric_augmentation(img, keypoints, image_shape):
-    """
-    Apply geometric augmentations: horizontal and vertical flips.
+    """Apply geometric augmentations (horizontal and vertical flips).
 
     Args:
         img: Grayscale image (H, W)
@@ -594,18 +566,14 @@ def apply_geometric_augmentation(img, keypoints, image_shape):
 
     # Random horizontal flip (50% chance)
     if np.random.rand() < 0.5:
-        # Flip the image horizontally (left-right)
         img = np.fliplr(img)
-        # Flip keypoint x-coordinates
         if len(keypoints) > 0:
             keypoints = keypoints.copy()
             keypoints[:, 0] = (W - 1) - keypoints[:, 0]
 
     # Random vertical flip (50% chance)
     if np.random.rand() < 0.5:
-        # Flip the image vertically (up-down)
         img = np.flipud(img)
-        # Flip keypoint y-coordinates
         if len(keypoints) > 0:
             keypoints = keypoints.copy()
             keypoints[:, 1] = (H - 1) - keypoints[:, 1]
@@ -613,21 +581,23 @@ def apply_geometric_augmentation(img, keypoints, image_shape):
     return img, keypoints
 
 
-# ============================================================
-# KEYPOINT DATASET
-# ============================================================
+# ============================================================================
+# Keypoint Dataset
+# ============================================================================
+
+from torch.utils.data import Dataset
+import cv2
 
 
 class KeypointDataset(Dataset):
-    """
-    Dataset for keypoint detection training with iteration-based approach.
+    """Dataset for keypoint detection training with on-the-fly augmentation.
 
     Supports infinite cycling through samples for iteration-based training.
 
     Modes:
     - pregenerate=True: Pre-generate base images, apply augmentation on-the-fly (RECOMMENDED)
-    - pregenerate=False: Generate completely new images each iteration (slower, max variety)
-    - load_from_file: Load pre-generated samples from file (path to .npz file)
+    - pregenerate=False: Generate new images each iteration (slower, max variety)
+    - load_from_file: Load pre-generated samples from .npz file
     """
 
     def __init__(
@@ -642,14 +612,15 @@ class KeypointDataset(Dataset):
             pregenerate=True,
             load_from_file=None
     ):
-        """
+        """Initialize keypoint dataset.
+
         Args:
             num_samples: Number of base samples (if pregenerate=True)
             image_shape: (H, W) - must be divisible by 8
             generate_fn: Function to generate synthetic images
             generate_kwargs: Kwargs for generate_fn
             use_homography_augment: Apply random homography
-            use_photometric_augment: Apply brightness/contrast
+            use_photometric_augment: Apply brightness/contrast changes
             use_geometric_augment: Apply flips
             pregenerate: Pre-generate base samples
             load_from_file: Path to .npz file with pre-generated data
@@ -700,7 +671,7 @@ class KeypointDataset(Dataset):
             print(f"✓ Pre-generation complete!")
 
     def _pregenerate_samples(self):
-        """Pre-generate base samples WITHOUT any augmentation."""
+        """Pre-generate base samples without augmentation."""
         self.pregenerated_data = []
 
         for i in range(self.num_samples):
@@ -710,7 +681,7 @@ class KeypointDataset(Dataset):
             # Generate base image and keypoints
             img, keypoints = self.generate_fn(**self.generate_kwargs)
 
-            # Convert to grayscale
+            # Convert to grayscale if needed
             if len(img.shape) == 3 and img.shape[2] == 3:
                 img_gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
             else:
@@ -746,15 +717,14 @@ class KeypointDataset(Dataset):
         print(f"✓ Saved {len(self.pregenerated_data)} samples to {filepath}")
 
     def __len__(self):
-        """Return actual number of pre-generated samples."""
+        """Return number of pre-generated samples."""
         if self.pregenerated_data is not None:
             return len(self.pregenerated_data)
         else:
             return self.num_samples
 
     def __getitem__(self, idx):
-        """
-        Get training sample with augmentations.
+        """Get training sample with augmentations applied.
 
         Returns:
             image: (1, H, W) tensor
@@ -774,7 +744,7 @@ class KeypointDataset(Dataset):
             else:
                 img_gray = img
 
-        # Apply augmentations in order:
+        # Apply augmentations in order
         # 1. Homography (perspective transformation)
         if self.use_homography_augment:
             img_gray, keypoints = apply_homography_augmentation(
@@ -785,7 +755,7 @@ class KeypointDataset(Dataset):
         if self.use_photometric_augment:
             img_gray = apply_photometric_augmentation(img_gray)
 
-        # # 3. Geometric (flips)
+        # 3. Geometric (flips) - commented out for now
         # if self.use_geometric_augment:
         #     img_gray, keypoints = apply_geometric_augmentation(
         #         img_gray, keypoints, self.image_shape
