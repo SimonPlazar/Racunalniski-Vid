@@ -62,45 +62,43 @@ class FlowNetSimple(nn.Module):
         # Upsample + concat with skip connections
         self.up3 = nn.ConvTranspose2d(128, 64, kernel_size=2, stride=2)
         self.up2 = nn.ConvTranspose2d(128, 32, kernel_size=2, stride=2)
-        self.up1 = nn.ConvTranspose2d(64, 16, kernel_size=2, stride=2)
+        self.up1 = nn.ConvTranspose2d(66, 16, kernel_size=2, stride=2)
 
         # ----- Multi-scale flow predictions -----
-        self.predict3 = nn.Conv2d(128, 2, kernel_size=1)
-        self.predict2 = nn.Conv2d(64, 2, kernel_size=1)
-        self.predict1 = nn.Conv2d(32, 2, kernel_size=1)
-
-        # Upsample predicted flow to next level
-        self.up_flow3 = nn.ConvTranspose2d(2, 16, kernel_size=2, stride=2)
-        self.up_flow2 = nn.ConvTranspose2d(2, 16, kernel_size=2, stride=2)
+        self.predict3 = nn.Conv2d(128, 2, kernel_size=1)  # 64 + 64 = 128
+        self.predict2 = nn.Conv2d(66, 2, kernel_size=1)   # 32 + 32 + 2 = 66
+        self.predict1 = nn.Conv2d(34, 2, kernel_size=1)   # 16 + 16 + 2 = 34
 
     def forward(self, x):
         # ----- Encoder -----
-        x1, skip1 = self.down1(x)   # (B,16,H/2)
-        x2, skip2 = self.down2(x1)  # (B,32,H/4)
-        x3, skip3 = self.down3(x2)  # (B,64,H/8)
+        x1, skip1 = self.down1(x)   # (B,16,H/2,W/2)
+        x2, skip2 = self.down2(x1)  # (B,32,H/4,W/4)
+        x3, skip3 = self.down3(x2)  # (B,64,H/8,W/8)
 
-        # bottleneck
+        # Bottleneck
         xb = self.b1(x3)
-        xb = self.b2(xb)
+        xb = self.b2(xb)            # (B,128,H/8,W/8)
 
         # ----- Decoder -----
 
-        # Level 3 (lowest resolution)
-        up3 = self.up3(xb)
-        concat3 = torch.cat([up3, skip3], dim=1)   # (64 + 64 = 128 channels)
-        flow3 = self.predict3(concat3)             # 1st flow output
-        up_flow3 = self.up_flow3(flow3)
+        # Level 3 (lowest resolution - 1/8)
+        up3 = self.up3(xb)                              # (B,64,H/4,W/4)
+        concat3 = torch.cat([up3, skip3], dim=1)        # (B,128,H/4,W/4) = 64+64
+        flow3 = self.predict3(concat3)                  # (B,2,H/4,W/4)
 
-        # Level 2
-        up2 = self.up2(concat3)
-        concat2 = torch.cat([up2, skip2, up_flow3], dim=1)  # (32 + 32 + 2)
-        flow2 = self.predict2(concat2)
-        up_flow2 = self.up_flow2(flow2)
+        # Level 2 (1/4 resolution)
+        up2 = self.up2(concat3)                         # (B,32,H/2,W/2)
+        flow3_up = F.interpolate(flow3, scale_factor=2,
+                                 mode='bilinear', align_corners=False)  # (B,2,H/2,W/2)
+        concat2 = torch.cat([up2, skip2, flow3_up], dim=1)  # (B,66,H/2,W/2) = 32+32+2
+        flow2 = self.predict2(concat2)                  # (B,2,H/2,W/2)
 
         # Level 1 (full resolution)
-        up1 = self.up1(concat2)
-        concat1 = torch.cat([up1, skip1, up_flow2], dim=1)   # (16 + 16 + 2)
-        flow1 = self.predict1(concat1)                      # final prediction
+        up1 = self.up1(concat2)                         # (B,16,H,W)
+        flow2_up = F.interpolate(flow2, scale_factor=2,
+                                 mode='bilinear', align_corners=False)  # (B,2,H,W)
+        concat1 = torch.cat([up1, skip1, flow2_up], dim=1)  # (B,34,H,W) = 16+16+2
+        flow1 = self.predict1(concat1)                  # (B,2,H,W)
 
         return flow1, flow2, flow3
 
