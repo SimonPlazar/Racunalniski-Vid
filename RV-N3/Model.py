@@ -144,7 +144,7 @@ import numpy as np
 import torch
 import IO
 
-class FlyingChairsOfficial(Dataset):
+class FlyingChairsDataset(Dataset):
     def __init__(self, root, split="train", transform=None):
         self.root = Path(root)
         self.transform = transform
