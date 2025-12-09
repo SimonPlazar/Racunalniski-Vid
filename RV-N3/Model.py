@@ -136,3 +136,81 @@ class MultiScaleEPE(nn.Module):
                      self.weights[2] * epe3)
 
         return total_loss, epe1, epe2, epe3
+
+# Dataset
+from torch.utils.data import Dataset
+from pathlib import Path
+import numpy as np
+import torch
+import IO
+
+class FlyingChairsOfficial(Dataset):
+    def __init__(self, root, split="train", transform=None):
+        self.root = Path(root)
+        self.transform = transform
+
+        split_file = self.root / "FlyingChairs_train_val.txt"
+        split_ids = np.loadtxt(split_file, dtype=np.int32)
+
+        if split == "train":
+            self.indices = np.where(split_ids == 1)[0] + 1
+        elif split == "val":
+            self.indices = np.where(split_ids == 2)[0] + 1
+        else:
+            self.indices = np.arange(1, len(split_ids) + 1)
+
+        self.data_dir = self.root / "data"
+
+    def __len__(self):
+        return len(self.indices)
+
+    def __getitem__(self, idx):
+            n = int(self.indices[idx])
+            img1_path = str(self.data_dir / f"{n:05d}_img1.ppm")
+            img2_path = str(self.data_dir / f"{n:05d}_img2.ppm")
+            flow_path = str(self.data_dir / f"{n:05d}_flow.flo")
+
+            # Read as numpy arrays
+            img1 = IO.readImage(img1_path)  # H×W×3 uint8
+            img2 = IO.readImage(img2_path)
+            flow = IO.read(flow_path)       # H×W×2 float32
+
+            # Get original size before any transforms
+            orig_h, orig_w = img1.shape[:2]
+
+            # Apply transform if exists (expects PIL or numpy)
+            if self.transform:
+                # Convert to PIL for torchvision transforms
+                from PIL import Image
+                img1 = Image.fromarray(img1)
+                img2 = Image.fromarray(img2)
+
+                img1 = self.transform(img1)  # now it's a tensor 3×256×256
+                img2 = self.transform(img2)
+
+                # Get new size from transformed tensor
+                _, new_h, new_w = img1.shape
+
+                # Resize and scale flow
+                flow = torch.from_numpy(flow).permute(2, 0, 1).float()  # 2×H×W
+                flow = F.interpolate(flow.unsqueeze(0), size=(new_h, new_w),
+                                    mode='bilinear', align_corners=False).squeeze(0)
+
+                # Scale flow values proportionally
+                scale_h = new_h / orig_h
+                scale_w = new_w / orig_w
+                flow[0] *= scale_w  # u component
+                flow[1] *= scale_h  # v component
+            else:
+                # No transform: just convert to tensors
+                img1 = torch.from_numpy(img1).permute(2, 0, 1).float() / 255.0
+                img2 = torch.from_numpy(img2).permute(2, 0, 1).float() / 255.0
+                flow = torch.from_numpy(flow).permute(2, 0, 1).float()
+
+            # Stack images → 6×H×W
+            img_pair = torch.cat([img1, img2], dim=0)
+
+            return img_pair, flow
+
+
+
