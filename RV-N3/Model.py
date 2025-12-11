@@ -220,3 +220,98 @@ class FlyingChairsDataset(Dataset):
         img_pair = torch.cat([img1, img2], dim=0)
 
         return img_pair, flow
+
+# MPI-Sintel Dataset
+
+from torch.utils.data import Dataset
+from pathlib import Path
+import torch
+import torch.nn.functional as F
+import numpy as np
+from PIL import Image
+import IO
+
+
+class MPISintelDataset(Dataset):
+    def __init__(self, root, split="training", pass_name="clean", resize_to=(448, 1024)):
+        """
+        Args:
+            root: Path to MPI-Sintel dataset root
+            split: "training" or "test"
+            pass_name: "clean" or "final"
+            resize_to: (H, W) deljiva z 16, None za original
+        """
+        self.root = Path(root)
+        self.split = split
+        self.pass_name = pass_name
+        self.resize_to = resize_to
+
+        # Paths
+        img_dir = self.root / split / pass_name
+        flow_dir = self.root / split / "flow"
+
+        # Get all sequences
+        self.samples = []
+        for seq_dir in sorted(img_dir.iterdir()):
+            if not seq_dir.is_dir():
+                continue
+            seq_name = seq_dir.name
+
+            # Get frame pairs
+            frames = sorted(seq_dir.glob("*.png"))
+            for i in range(len(frames) - 1):
+                img1 = frames[i]
+                img2 = frames[i + 1]
+                flow_file = flow_dir / seq_name / f"frame_{i + 1:04d}.flo"
+
+                if split == "training" and flow_file.exists():
+                    self.samples.append((img1, img2, flow_file))
+                elif split == "test":
+                    self.samples.append((img1, img2, None))
+
+    def __len__(self):
+        return len(self.samples)
+
+    def __getitem__(self, idx):
+        img1_path, img2_path, flow_path = self.samples[idx]
+
+        # Load images
+        img1 = Image.open(img1_path).convert('RGB')
+        img2 = Image.open(img2_path).convert('RGB')
+
+        orig_w, orig_h = img1.size
+
+        # Load flow if available
+        if flow_path is not None and flow_path.exists():
+            flow = IO.read(str(flow_path))  # H×W×2
+            flow = torch.from_numpy(flow).permute(2, 0, 1).float()  # 2×H×W
+        else:
+            flow = None
+
+        # Resize if needed
+        if self.resize_to is not None:
+            new_h, new_w = self.resize_to
+
+            # Resize images
+            img1 = img1.resize((new_w, new_h), Image.BILINEAR)
+            img2 = img2.resize((new_w, new_h), Image.BILINEAR)
+
+            # Resize and scale flow
+            if flow is not None:
+                flow = F.interpolate(flow.unsqueeze(0), size=(new_h, new_w),
+                                     mode='bilinear', align_corners=False).squeeze(0)
+                scale_x = new_w / orig_w
+                scale_y = new_h / orig_h
+                flow[0] *= scale_x
+                flow[1] *= scale_y
+
+        # Convert to tensors
+        img1 = torch.from_numpy(np.array(img1)).permute(2, 0, 1).float() / 255.0
+        img2 = torch.from_numpy(np.array(img2)).permute(2, 0, 1).float() / 255.0
+
+        img_pair = torch.cat([img1, img2], dim=0)  # 6×H×W
+
+        if flow is None:
+            flow = torch.zeros(2, img1.shape[1], img1.shape[2])
+
+        return img_pair, flow

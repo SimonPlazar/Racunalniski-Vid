@@ -1,0 +1,619 @@
+<html>
+<head>
+<title>interest_point_detection.ipynb</title>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<style type="text/css">
+.s0 { color: #bcbec4;}
+.s1 { color: #cf8e6d;}
+.s2 { color: #bcbec4;}
+.s3 { color: #7a7e85;}
+.s4 { color: #2aacb8;}
+.s5 { color: #6aab73;}
+.s6 { color: #5f826b; font-style: italic;}
+.ls0 { height: 1px; border-width: 0; color: #43454a; background-color:#43454a}
+</style>
+</head>
+<body bgcolor="#1e1f22">
+<table CELLSPACING=0 CELLPADDING=5 COLS=1 WIDTH="100%" BGCOLOR="#606060" >
+<tr><td><center>
+<font face="Arial, Helvetica" color="#000000">
+interest_point_detection.ipynb</font>
+</center></td></tr></table>
+<pre><span class="s0">#%% 
+</span><span class="s1">import </span><span class="s0">torch</span>
+<span class="s1">import </span><span class="s0">torch</span><span class="s2">.</span><span class="s0">nn</span><span class="s2">.</span><span class="s0">functional </span><span class="s1">as </span><span class="s0">F</span>
+<span class="s1">from </span><span class="s0">torch</span><span class="s2">.</span><span class="s0">utils</span><span class="s2">.</span><span class="s0">data </span><span class="s1">import </span><span class="s0">DataLoader</span>
+<span class="s1">import </span><span class="s0">os</span>
+<span class="s1">from </span><span class="s0">itertools </span><span class="s1">import </span><span class="s0">cycle</span>
+
+<span class="s1">from </span><span class="s0">Models </span><span class="s1">import </span><span class="s0">KeypointNet</span><span class="s2">, </span><span class="s0">KeypointDataset</span>
+<span class="s1">from </span><span class="s0">Helper </span><span class="s1">import </span><span class="s0">save_checkpoint_generic</span><span class="s2">, </span><span class="s0">load_checkpoint_generic</span>
+<span class="s1">from </span><span class="s0">Generator </span><span class="s1">import </span><span class="s0">generate_synthetic_image</span>
+<hr class="ls0"><span class="s0">#%% 
+</span><span class="s3"># ============================================================</span>
+<span class="s3"># HYPERPARAMETERS</span>
+<span class="s3"># ============================================================</span>
+
+<span class="s3"># Model parameters (SuperPoint: Adam, lr=0.001, beta=(0.9, 0.999))</span>
+<span class="s0">learning_rate </span><span class="s2">= </span><span class="s4">0.001</span>
+<span class="s0">adam_betas </span><span class="s2">= (</span><span class="s4">0.9</span><span class="s2">, </span><span class="s4">0.999</span><span class="s2">)</span>
+<span class="s0">weight_decay </span><span class="s2">= </span><span class="s4">0.0</span>
+
+<span class="s3"># Training parameters (iteration-based)</span>
+<span class="s0">num_iterations </span><span class="s2">= </span><span class="s4">200_000  </span><span class="s3"># SuperPoint uses 200k iterations</span>
+<span class="s0">batch_size </span><span class="s2">= </span><span class="s4">16  </span><span class="s3"># SuperPoint uses 32</span>
+
+<span class="s3"># Image parameters</span>
+<span class="s0">image_size </span><span class="s2">= (</span><span class="s4">240</span><span class="s2">, </span><span class="s4">320</span><span class="s2">)  </span><span class="s3"># (Height, Width)</span>
+
+<span class="s3"># Dataset parameters</span>
+<span class="s0">num_train_samples </span><span class="s2">= </span><span class="s4">5000  </span><span class="s3"># Number of pregenerated training samples</span>
+<span class="s0">num_test_samples </span><span class="s2">= </span><span class="s4">500  </span><span class="s3"># Number of pregenerated test samples</span>
+
+<span class="s3"># Augmentation settings (applied during training, not during generation)</span>
+<span class="s0">use_homography_augment </span><span class="s2">= </span><span class="s1">True  </span><span class="s3"># Apply random homography to training data</span>
+<span class="s0">use_photometric_augment </span><span class="s2">= </span><span class="s1">True  </span><span class="s3"># Apply brightness/contrast to training data</span>
+<span class="s0">use_geometric_augment </span><span class="s2">= </span><span class="s1">True  </span><span class="s3"># Apply flips to training data</span>
+
+<span class="s3"># Dataset file paths (.npz format - contains pregenerated images)</span>
+<span class="s0">dataset_cache_dir </span><span class="s2">= </span><span class="s5">'./datasets'</span>
+<span class="s0">load_datasets_if_exist </span><span class="s2">= </span><span class="s1">True  </span><span class="s3"># Load from .npz files if available</span>
+
+<span class="s3"># Checkpoint parameters</span>
+<span class="s0">checkpoint_dir </span><span class="s2">= </span><span class="s5">'./checkpoints'</span>
+<span class="s0">save_checkpoint_every </span><span class="s2">= </span><span class="s4">5000  </span><span class="s3"># Save every N iterations</span>
+<span class="s0">max_checkpoints </span><span class="s2">= </span><span class="s4">4</span>
+
+<span class="s3"># Logging parameters</span>
+<span class="s0">eval_every </span><span class="s2">= </span><span class="s4">100  </span><span class="s3"># Evaluate on test set every N iterations</span>
+<span class="s0">print_every </span><span class="s2">= </span><span class="s4">10</span>
+
+<span class="s3"># Create directories</span>
+<span class="s0">os</span><span class="s2">.</span><span class="s0">makedirs</span><span class="s2">(</span><span class="s0">checkpoint_dir</span><span class="s2">, </span><span class="s0">exist_ok</span><span class="s2">=</span><span class="s1">True</span><span class="s2">)</span>
+<span class="s0">os</span><span class="s2">.</span><span class="s0">makedirs</span><span class="s2">(</span><span class="s0">dataset_cache_dir</span><span class="s2">, </span><span class="s0">exist_ok</span><span class="s2">=</span><span class="s1">True</span><span class="s2">)</span>
+
+<span class="s0">print</span><span class="s2">(</span><span class="s5">&quot;✓ Configuration loaded&quot;</span><span class="s2">)</span>
+<span class="s0">print</span><span class="s2">(</span><span class="s5">f&quot;  Device: </span><span class="s1">{</span><span class="s5">'CUDA' </span><span class="s1">if </span><span class="s0">torch</span><span class="s2">.</span><span class="s0">cuda</span><span class="s2">.</span><span class="s0">is_available</span><span class="s2">() </span><span class="s1">else </span><span class="s5">'CPU'</span><span class="s1">}</span><span class="s5">&quot;</span><span class="s2">)</span>
+<span class="s0">print</span><span class="s2">(</span><span class="s5">f&quot;  Training samples: </span><span class="s1">{</span><span class="s0">num_train_samples</span><span class="s1">}</span><span class="s5">&quot;</span><span class="s2">)</span>
+<span class="s0">print</span><span class="s2">(</span><span class="s5">f&quot;  Test samples: </span><span class="s1">{</span><span class="s0">num_test_samples</span><span class="s1">}</span><span class="s5">&quot;</span><span class="s2">)</span>
+<span class="s0">print</span><span class="s2">(</span><span class="s5">f&quot;  Batch size: </span><span class="s1">{</span><span class="s0">batch_size</span><span class="s1">}</span><span class="s5">&quot;</span><span class="s2">)</span>
+<span class="s0">print</span><span class="s2">(</span><span class="s5">f&quot;  Target iterations: </span><span class="s1">{</span><span class="s0">num_iterations</span><span class="s1">:</span><span class="s5">,</span><span class="s1">}</span><span class="s5">&quot;</span><span class="s2">)</span>
+<span class="s0">print</span><span class="s2">(</span><span class="s5">f&quot;  Training augmentation: </span><span class="s1">{</span><span class="s5">'ENABLED' </span><span class="s1">if </span><span class="s0">use_homography_augment </span><span class="s1">else </span><span class="s5">'DISABLED'</span><span class="s1">}</span><span class="s5">&quot;</span><span class="s2">)</span>
+<span class="s0">print</span><span class="s2">()</span>
+<hr class="ls0"><span class="s0">#%% 
+</span><span class="s3"># ============================================================</span>
+<span class="s3"># DATASET GENERATION AND SAVING (Run once to create datasets)</span>
+<span class="s3"># ============================================================</span>
+
+<span class="s1">def </span><span class="s0">generate_and_save_datasets</span><span class="s2">():</span>
+    <span class="s0">train_samples_path </span><span class="s2">= </span><span class="s0">os</span><span class="s2">.</span><span class="s0">path</span><span class="s2">.</span><span class="s0">join</span><span class="s2">(</span><span class="s0">dataset_cache_dir</span><span class="s2">, </span><span class="s5">f'train_samples_</span><span class="s1">{</span><span class="s0">num_train_samples</span><span class="s1">}</span><span class="s5">.npz'</span><span class="s2">)</span>
+    <span class="s0">test_samples_path </span><span class="s2">= </span><span class="s0">os</span><span class="s2">.</span><span class="s0">path</span><span class="s2">.</span><span class="s0">join</span><span class="s2">(</span><span class="s0">dataset_cache_dir</span><span class="s2">, </span><span class="s5">f'test_samples_</span><span class="s1">{</span><span class="s0">num_test_samples</span><span class="s1">}</span><span class="s5">.npz'</span><span class="s2">)</span>
+
+    <span class="s0">print</span><span class="s2">(</span><span class="s5">&quot;=&quot; </span><span class="s2">* </span><span class="s4">60</span><span class="s2">)</span>
+    <span class="s0">print</span><span class="s2">(</span><span class="s5">&quot;DATASET GENERATION&quot;</span><span class="s2">)</span>
+    <span class="s0">print</span><span class="s2">(</span><span class="s5">&quot;=&quot; </span><span class="s2">* </span><span class="s4">60</span><span class="s2">)</span>
+    <span class="s0">print</span><span class="s2">()</span>
+
+    <span class="s3"># Generate and save training samples (raw, no augmentation)</span>
+    <span class="s0">print</span><span class="s2">(</span><span class="s5">f&quot;Generating </span><span class="s1">{</span><span class="s0">num_train_samples</span><span class="s1">} </span><span class="s5">training samples...&quot;</span><span class="s2">)</span>
+    <span class="s0">train_generator </span><span class="s2">= </span><span class="s0">KeypointDataset</span><span class="s2">(</span>
+        <span class="s0">num_samples</span><span class="s2">=</span><span class="s0">num_train_samples</span><span class="s2">,</span>
+        <span class="s0">image_shape</span><span class="s2">=</span><span class="s0">image_size</span><span class="s2">,</span>
+        <span class="s0">generate_fn</span><span class="s2">=</span><span class="s0">generate_synthetic_image</span><span class="s2">,</span>
+        <span class="s0">generate_kwargs</span><span class="s2">={</span>
+            <span class="s5">'width'</span><span class="s2">: </span><span class="s0">image_size</span><span class="s2">[</span><span class="s4">1</span><span class="s2">],</span>
+            <span class="s5">'height'</span><span class="s2">: </span><span class="s0">image_size</span><span class="s2">[</span><span class="s4">0</span><span class="s2">],</span>
+            <span class="s5">'shape_type'</span><span class="s2">: </span><span class="s5">'random'</span><span class="s2">,</span>
+            <span class="s5">'grayscale'</span><span class="s2">: </span><span class="s1">True</span>
+        <span class="s2">},</span>
+        <span class="s0">use_homography_augment</span><span class="s2">=</span><span class="s1">False</span><span class="s2">,</span>
+        <span class="s0">use_photometric_augment</span><span class="s2">=</span><span class="s1">False</span><span class="s2">,</span>
+        <span class="s0">use_geometric_augment</span><span class="s2">=</span><span class="s1">False</span><span class="s2">,</span>
+        <span class="s0">pregenerate</span><span class="s2">=</span><span class="s1">True</span>
+    <span class="s2">)</span>
+    <span class="s0">print</span><span class="s2">(</span><span class="s5">f&quot;✓ Training samples generated: </span><span class="s1">{</span><span class="s0">len</span><span class="s2">(</span><span class="s0">train_generator</span><span class="s2">)</span><span class="s1">} </span><span class="s5">samples&quot;</span><span class="s2">)</span>
+
+    <span class="s3"># Save training samples</span>
+    <span class="s0">print</span><span class="s2">(</span><span class="s5">f&quot;Saving to </span><span class="s1">{</span><span class="s0">train_samples_path</span><span class="s1">}</span><span class="s5">...&quot;</span><span class="s2">)</span>
+    <span class="s0">train_generator</span><span class="s2">.</span><span class="s0">save_to_file</span><span class="s2">(</span><span class="s0">train_samples_path</span><span class="s2">)</span>
+    <span class="s0">print</span><span class="s2">(</span><span class="s5">f&quot;✓ Training samples saved!&quot;</span><span class="s2">)</span>
+    <span class="s0">print</span><span class="s2">()</span>
+
+    <span class="s3"># Generate and save test samples (raw, no augmentation)</span>
+    <span class="s0">print</span><span class="s2">(</span><span class="s5">f&quot;Generating </span><span class="s1">{</span><span class="s0">num_test_samples</span><span class="s1">} </span><span class="s5">test samples...&quot;</span><span class="s2">)</span>
+    <span class="s0">test_generator </span><span class="s2">= </span><span class="s0">KeypointDataset</span><span class="s2">(</span>
+        <span class="s0">num_samples</span><span class="s2">=</span><span class="s0">num_test_samples</span><span class="s2">,</span>
+        <span class="s0">image_shape</span><span class="s2">=</span><span class="s0">image_size</span><span class="s2">,</span>
+        <span class="s0">generate_fn</span><span class="s2">=</span><span class="s0">generate_synthetic_image</span><span class="s2">,</span>
+        <span class="s0">generate_kwargs</span><span class="s2">={</span>
+            <span class="s5">'width'</span><span class="s2">: </span><span class="s0">image_size</span><span class="s2">[</span><span class="s4">1</span><span class="s2">],</span>
+            <span class="s5">'height'</span><span class="s2">: </span><span class="s0">image_size</span><span class="s2">[</span><span class="s4">0</span><span class="s2">],</span>
+            <span class="s5">'shape_type'</span><span class="s2">: </span><span class="s5">'random'</span><span class="s2">,</span>
+            <span class="s5">'grayscale'</span><span class="s2">: </span><span class="s1">True</span>
+        <span class="s2">},</span>
+        <span class="s0">use_homography_augment</span><span class="s2">=</span><span class="s1">False</span><span class="s2">,</span>
+        <span class="s0">use_photometric_augment</span><span class="s2">=</span><span class="s1">False</span><span class="s2">,</span>
+        <span class="s0">use_geometric_augment</span><span class="s2">=</span><span class="s1">False</span><span class="s2">,</span>
+        <span class="s0">pregenerate</span><span class="s2">=</span><span class="s1">True</span>
+    <span class="s2">)</span>
+    <span class="s0">print</span><span class="s2">(</span><span class="s5">f&quot;✓ Test samples generated: </span><span class="s1">{</span><span class="s0">len</span><span class="s2">(</span><span class="s0">test_generator</span><span class="s2">)</span><span class="s1">} </span><span class="s5">samples&quot;</span><span class="s2">)</span>
+
+    <span class="s3"># Save test samples</span>
+    <span class="s0">print</span><span class="s2">(</span><span class="s5">f&quot;Saving to </span><span class="s1">{</span><span class="s0">test_samples_path</span><span class="s1">}</span><span class="s5">...&quot;</span><span class="s2">)</span>
+    <span class="s0">test_generator</span><span class="s2">.</span><span class="s0">save_to_file</span><span class="s2">(</span><span class="s0">test_samples_path</span><span class="s2">)</span>
+    <span class="s0">print</span><span class="s2">(</span><span class="s5">f&quot;✓ Test samples saved!&quot;</span><span class="s2">)</span>
+    <span class="s0">print</span><span class="s2">()</span>
+
+    <span class="s0">print</span><span class="s2">(</span><span class="s5">&quot;=&quot; </span><span class="s2">* </span><span class="s4">60</span><span class="s2">)</span>
+    <span class="s0">print</span><span class="s2">(</span><span class="s5">&quot;✓ Dataset generation complete!&quot;</span><span class="s2">)</span>
+    <span class="s0">print</span><span class="s2">(</span><span class="s5">&quot;=&quot; </span><span class="s2">* </span><span class="s4">60</span><span class="s2">)</span>
+    <span class="s0">print</span><span class="s2">(</span><span class="s5">f&quot;Training samples: </span><span class="s1">{</span><span class="s0">train_samples_path</span><span class="s1">}</span><span class="s5">&quot;</span><span class="s2">)</span>
+    <span class="s0">print</span><span class="s2">(</span><span class="s5">f&quot;Test samples: </span><span class="s1">{</span><span class="s0">test_samples_path</span><span class="s1">}</span><span class="s5">&quot;</span><span class="s2">)</span>
+    <span class="s0">print</span><span class="s2">()</span>
+
+<span class="s3"># generate_and_save_datasets()</span>
+<hr class="ls0"><span class="s0">#%% 
+</span><span class="s3"># ============================================================</span>
+<span class="s3"># LOAD DATASETS AND INIT MODEL</span>
+<span class="s3"># ============================================================</span>
+
+<span class="s0">print</span><span class="s2">(</span><span class="s5">&quot;=&quot; </span><span class="s2">* </span><span class="s4">60</span><span class="s2">)</span>
+<span class="s0">print</span><span class="s2">(</span><span class="s5">&quot;TRAINING SETUP&quot;</span><span class="s2">)</span>
+<span class="s0">print</span><span class="s2">(</span><span class="s5">&quot;=&quot; </span><span class="s2">* </span><span class="s4">60</span><span class="s2">)</span>
+<span class="s0">print</span><span class="s2">()</span>
+
+<span class="s3"># ============================================================</span>
+<span class="s3"># LOAD DATASETS FROM .NPZ FILES</span>
+<span class="s3"># ============================================================</span>
+
+<span class="s0">train_samples_path </span><span class="s2">= </span><span class="s0">os</span><span class="s2">.</span><span class="s0">path</span><span class="s2">.</span><span class="s0">join</span><span class="s2">(</span><span class="s0">dataset_cache_dir</span><span class="s2">, </span><span class="s5">f'train_samples_</span><span class="s1">{</span><span class="s0">num_train_samples</span><span class="s1">}</span><span class="s5">.npz'</span><span class="s2">)</span>
+<span class="s0">test_samples_path </span><span class="s2">= </span><span class="s0">os</span><span class="s2">.</span><span class="s0">path</span><span class="s2">.</span><span class="s0">join</span><span class="s2">(</span><span class="s0">dataset_cache_dir</span><span class="s2">, </span><span class="s5">f'test_samples_</span><span class="s1">{</span><span class="s0">num_test_samples</span><span class="s1">}</span><span class="s5">.npz'</span><span class="s2">)</span>
+
+<span class="s0">train_dataset </span><span class="s2">= </span><span class="s1">None</span>
+<span class="s0">test_dataset </span><span class="s2">= </span><span class="s1">None</span>
+
+<span class="s3"># Load training dataset WITH augmentation</span>
+<span class="s1">if </span><span class="s0">load_datasets_if_exist </span><span class="s1">and </span><span class="s0">os</span><span class="s2">.</span><span class="s0">path</span><span class="s2">.</span><span class="s0">exists</span><span class="s2">(</span><span class="s0">train_samples_path</span><span class="s2">):</span>
+    <span class="s0">print</span><span class="s2">(</span><span class="s5">f&quot;Loading training samples from </span><span class="s1">{</span><span class="s0">train_samples_path</span><span class="s1">}</span><span class="s5">...&quot;</span><span class="s2">)</span>
+    <span class="s0">print</span><span class="s2">(</span><span class="s5">f&quot;  Augmentation: </span><span class="s1">{</span><span class="s5">'ENABLED' </span><span class="s1">if </span><span class="s0">use_homography_augment </span><span class="s1">else </span><span class="s5">'DISABLED'</span><span class="s1">}</span><span class="s5">&quot;</span><span class="s2">)</span>
+    <span class="s1">try</span><span class="s2">:</span>
+        <span class="s0">train_dataset </span><span class="s2">= </span><span class="s0">KeypointDataset</span><span class="s2">(</span>
+            <span class="s0">num_samples</span><span class="s2">=</span><span class="s0">num_train_samples</span><span class="s2">,</span>
+            <span class="s0">image_shape</span><span class="s2">=</span><span class="s0">image_size</span><span class="s2">,</span>
+            <span class="s0">use_homography_augment</span><span class="s2">=</span><span class="s0">use_homography_augment</span><span class="s2">,</span>
+            <span class="s0">use_photometric_augment</span><span class="s2">=</span><span class="s0">use_photometric_augment</span><span class="s2">,</span>
+            <span class="s0">use_geometric_augment</span><span class="s2">=</span><span class="s0">use_geometric_augment</span><span class="s2">,</span>
+            <span class="s0">pregenerate</span><span class="s2">=</span><span class="s1">False</span><span class="s2">,  </span><span class="s3"># Don't regenerate, just load</span>
+            <span class="s0">load_from_file</span><span class="s2">=</span><span class="s0">train_samples_path</span>
+        <span class="s2">)</span>
+        <span class="s0">print</span><span class="s2">(</span><span class="s5">f&quot;✓ Training dataset loaded: </span><span class="s1">{</span><span class="s0">len</span><span class="s2">(</span><span class="s0">train_dataset</span><span class="s2">)</span><span class="s1">} </span><span class="s5">samples&quot;</span><span class="s2">)</span>
+    <span class="s1">except </span><span class="s0">Exception </span><span class="s1">as </span><span class="s0">e</span><span class="s2">:</span>
+        <span class="s0">print</span><span class="s2">(</span><span class="s5">f&quot;⚠️  Failed to load training dataset: </span><span class="s1">{</span><span class="s0">e</span><span class="s1">}</span><span class="s5">&quot;</span><span class="s2">)</span>
+        <span class="s0">print</span><span class="s2">(</span><span class="s5">&quot;Please run the dataset generation cell first!&quot;</span><span class="s2">)</span>
+        <span class="s0">train_dataset </span><span class="s2">= </span><span class="s1">None</span>
+<span class="s1">else</span><span class="s2">:</span>
+    <span class="s0">print</span><span class="s2">(</span><span class="s5">f&quot;⚠️  Training samples not found at </span><span class="s1">{</span><span class="s0">train_samples_path</span><span class="s1">}</span><span class="s5">&quot;</span><span class="s2">)</span>
+    <span class="s0">print</span><span class="s2">(</span><span class="s5">&quot;Please run the dataset generation cell first!&quot;</span><span class="s2">)</span>
+
+<span class="s3"># Load test dataset WITHOUT augmentation</span>
+<span class="s1">if </span><span class="s0">load_datasets_if_exist </span><span class="s1">and </span><span class="s0">os</span><span class="s2">.</span><span class="s0">path</span><span class="s2">.</span><span class="s0">exists</span><span class="s2">(</span><span class="s0">test_samples_path</span><span class="s2">):</span>
+    <span class="s0">print</span><span class="s2">(</span><span class="s5">f&quot;Loading test samples from </span><span class="s1">{</span><span class="s0">test_samples_path</span><span class="s1">}</span><span class="s5">...&quot;</span><span class="s2">)</span>
+    <span class="s3"># print(f&quot;  Augmentation: {'ENABLED' if use_homography_augment else 'DISABLED'} (test set)&quot;)</span>
+    <span class="s1">try</span><span class="s2">:</span>
+        <span class="s0">test_dataset </span><span class="s2">= </span><span class="s0">KeypointDataset</span><span class="s2">(</span>
+            <span class="s0">num_samples</span><span class="s2">=</span><span class="s0">num_test_samples</span><span class="s2">,</span>
+            <span class="s0">image_shape</span><span class="s2">=</span><span class="s0">image_size</span><span class="s2">,</span>
+            <span class="s3"># use_homography_augment=False,</span>
+            <span class="s3"># use_photometric_augment=False,</span>
+            <span class="s3"># use_geometric_augment=False,</span>
+            <span class="s0">pregenerate</span><span class="s2">=</span><span class="s1">False</span><span class="s2">,</span>
+            <span class="s3"># load_from_file=test_samples_path</span>
+        <span class="s2">)</span>
+        <span class="s0">print</span><span class="s2">(</span><span class="s5">f&quot;✓ Test dataset loaded: </span><span class="s1">{</span><span class="s0">len</span><span class="s2">(</span><span class="s0">test_dataset</span><span class="s2">)</span><span class="s1">} </span><span class="s5">samples&quot;</span><span class="s2">)</span>
+    <span class="s1">except </span><span class="s0">Exception </span><span class="s1">as </span><span class="s0">e</span><span class="s2">:</span>
+        <span class="s0">print</span><span class="s2">(</span><span class="s5">f&quot;⚠️  Failed to load test dataset: </span><span class="s1">{</span><span class="s0">e</span><span class="s1">}</span><span class="s5">&quot;</span><span class="s2">)</span>
+        <span class="s0">print</span><span class="s2">(</span><span class="s5">&quot;Please run the dataset generation cell first!&quot;</span><span class="s2">)</span>
+        <span class="s0">test_dataset </span><span class="s2">= </span><span class="s1">None</span>
+<span class="s1">else</span><span class="s2">:</span>
+    <span class="s0">print</span><span class="s2">(</span><span class="s5">f&quot;⚠️  Test samples not found at </span><span class="s1">{</span><span class="s0">test_samples_path</span><span class="s1">}</span><span class="s5">&quot;</span><span class="s2">)</span>
+    <span class="s0">print</span><span class="s2">(</span><span class="s5">&quot;Please run the dataset generation cell first!&quot;</span><span class="s2">)</span>
+
+<span class="s3"># Check if datasets were loaded successfully</span>
+<span class="s1">if </span><span class="s0">train_dataset </span><span class="s1">is None or </span><span class="s0">test_dataset </span><span class="s1">is None</span><span class="s2">:</span>
+    <span class="s0">print</span><span class="s2">()</span>
+    <span class="s0">print</span><span class="s2">(</span><span class="s5">&quot;=&quot; </span><span class="s2">* </span><span class="s4">60</span><span class="s2">)</span>
+    <span class="s0">print</span><span class="s2">(</span><span class="s5">&quot;⚠️  ERROR: Datasets not loaded!&quot;</span><span class="s2">)</span>
+    <span class="s0">print</span><span class="s2">(</span><span class="s5">&quot;=&quot; </span><span class="s2">* </span><span class="s4">60</span><span class="s2">)</span>
+    <span class="s0">print</span><span class="s2">(</span><span class="s5">&quot;Please run Cell 3 (Dataset Generation) first to create the .npz files.&quot;</span><span class="s2">)</span>
+    <span class="s0">print</span><span class="s2">()</span>
+    <span class="s1">raise </span><span class="s0">RuntimeError</span><span class="s2">(</span><span class="s5">&quot;Datasets not found. Run dataset generation cell first.&quot;</span><span class="s2">)</span>
+
+<span class="s0">print</span><span class="s2">()</span>
+
+<span class="s3"># ============================================================</span>
+<span class="s3"># CREATE DATALOADERS</span>
+<span class="s3"># ============================================================</span>
+
+<span class="s0">print</span><span class="s2">(</span><span class="s5">&quot;Creating DataLoaders...&quot;</span><span class="s2">)</span>
+<span class="s0">train_loader </span><span class="s2">= </span><span class="s0">DataLoader</span><span class="s2">(</span>
+    <span class="s0">train_dataset</span><span class="s2">,</span>
+    <span class="s0">batch_size</span><span class="s2">=</span><span class="s0">batch_size</span><span class="s2">,</span>
+    <span class="s0">shuffle</span><span class="s2">=</span><span class="s1">True</span><span class="s2">,</span>
+    <span class="s0">num_workers</span><span class="s2">=</span><span class="s4">0</span>
+<span class="s2">)</span>
+
+<span class="s0">test_loader </span><span class="s2">= </span><span class="s0">DataLoader</span><span class="s2">(</span>
+    <span class="s0">test_dataset</span><span class="s2">,</span>
+    <span class="s0">batch_size</span><span class="s2">=</span><span class="s0">batch_size</span><span class="s2">,</span>
+    <span class="s0">shuffle</span><span class="s2">=</span><span class="s1">False</span><span class="s2">,</span>
+    <span class="s0">num_workers</span><span class="s2">=</span><span class="s4">0</span>
+<span class="s2">)</span>
+
+<span class="s0">print</span><span class="s2">(</span><span class="s5">f&quot;✓ DataLoaders created&quot;</span><span class="s2">)</span>
+<span class="s0">print</span><span class="s2">(</span><span class="s5">f&quot;  Training batches per epoch: </span><span class="s1">{</span><span class="s0">len</span><span class="s2">(</span><span class="s0">train_loader</span><span class="s2">)</span><span class="s1">}</span><span class="s5">&quot;</span><span class="s2">)</span>
+<span class="s0">print</span><span class="s2">(</span><span class="s5">f&quot;  Test batches: </span><span class="s1">{</span><span class="s0">len</span><span class="s2">(</span><span class="s0">test_loader</span><span class="s2">)</span><span class="s1">}</span><span class="s5">&quot;</span><span class="s2">)</span>
+<span class="s0">print</span><span class="s2">()</span>
+
+<span class="s3"># ============================================================</span>
+<span class="s3"># MODEL INITIALIZATION</span>
+<span class="s3"># ============================================================</span>
+
+<span class="s0">print</span><span class="s2">(</span><span class="s5">&quot;Initializing model...&quot;</span><span class="s2">)</span>
+<span class="s0">device </span><span class="s2">= </span><span class="s0">torch</span><span class="s2">.</span><span class="s0">device</span><span class="s2">(</span><span class="s5">'cuda' </span><span class="s1">if </span><span class="s0">torch</span><span class="s2">.</span><span class="s0">cuda</span><span class="s2">.</span><span class="s0">is_available</span><span class="s2">() </span><span class="s1">else </span><span class="s5">'cpu'</span><span class="s2">)</span>
+<span class="s0">print</span><span class="s2">(</span><span class="s5">f&quot;Using device: </span><span class="s1">{</span><span class="s0">device</span><span class="s1">}</span><span class="s5">&quot;</span><span class="s2">)</span>
+
+<span class="s0">model </span><span class="s2">= </span><span class="s0">KeypointNet</span><span class="s2">().</span><span class="s0">to</span><span class="s2">(</span><span class="s0">device</span><span class="s2">)</span>
+
+<span class="s3"># Optimizer (SuperPoint paper: Adam with lr=0.001, betas=(0.9, 0.999))</span>
+<span class="s0">optimizer </span><span class="s2">= </span><span class="s0">torch</span><span class="s2">.</span><span class="s0">optim</span><span class="s2">.</span><span class="s0">Adam</span><span class="s2">(</span>
+    <span class="s0">model</span><span class="s2">.</span><span class="s0">parameters</span><span class="s2">(),</span>
+    <span class="s0">lr</span><span class="s2">=</span><span class="s0">learning_rate</span><span class="s2">,</span>
+    <span class="s0">betas</span><span class="s2">=</span><span class="s0">adam_betas</span><span class="s2">,</span>
+    <span class="s0">weight_decay</span><span class="s2">=</span><span class="s0">weight_decay</span>
+<span class="s2">)</span>
+<span class="s0">scheduler </span><span class="s2">= </span><span class="s0">torch</span><span class="s2">.</span><span class="s0">optim</span><span class="s2">.</span><span class="s0">lr_scheduler</span><span class="s2">.</span><span class="s0">StepLR</span><span class="s2">(</span><span class="s0">optimizer</span><span class="s2">, </span><span class="s0">step_size</span><span class="s2">=</span><span class="s4">50_000</span><span class="s2">, </span><span class="s0">gamma</span><span class="s2">=</span><span class="s4">0.5</span><span class="s2">)</span>
+<hr class="ls0"><span class="s0">#%% 
+</span><span class="s3"># ============================================================</span>
+<span class="s3"># TRAINING LOOP (modified: soft-label loss, per-cell norm,</span>
+<span class="s3"># positive-cell weighting, safe scheduler step, gradient clipping)</span>
+<span class="s3"># ============================================================</span>
+
+<span class="s3"># Loss tracking</span>
+<span class="s0">train_losses </span><span class="s2">= []</span>
+<span class="s0">test_losses </span><span class="s2">= []</span>
+<span class="s0">start_iteration </span><span class="s2">= </span><span class="s4">0</span>
+
+<span class="s3"># Load checkpoint if exists</span>
+<span class="s0">checkpoint </span><span class="s2">= </span><span class="s0">load_checkpoint_generic</span><span class="s2">(</span><span class="s0">checkpoint_dir</span><span class="s2">, </span><span class="s0">device</span><span class="s2">)</span>
+<span class="s1">if </span><span class="s0">checkpoint</span><span class="s2">:</span>
+    <span class="s0">model</span><span class="s2">.</span><span class="s0">load_state_dict</span><span class="s2">(</span><span class="s0">checkpoint</span><span class="s2">[</span><span class="s5">'model_state_dict'</span><span class="s2">])</span>
+    <span class="s0">optimizer</span><span class="s2">.</span><span class="s0">load_state_dict</span><span class="s2">(</span><span class="s0">checkpoint</span><span class="s2">[</span><span class="s5">'optimizer_state_dict'</span><span class="s2">])</span>
+    <span class="s0">start_iteration </span><span class="s2">= </span><span class="s0">checkpoint</span><span class="s2">.</span><span class="s0">get</span><span class="s2">(</span><span class="s5">'iteration'</span><span class="s2">, </span><span class="s4">0</span><span class="s2">)</span>
+    <span class="s0">train_losses </span><span class="s2">= </span><span class="s0">checkpoint</span><span class="s2">.</span><span class="s0">get</span><span class="s2">(</span><span class="s5">'train_losses'</span><span class="s2">, [])</span>
+    <span class="s0">test_losses </span><span class="s2">= </span><span class="s0">checkpoint</span><span class="s2">.</span><span class="s0">get</span><span class="s2">(</span><span class="s5">'test_losses'</span><span class="s2">, [])</span>
+    <span class="s0">print</span><span class="s2">(</span><span class="s5">f&quot;✓ Resuming from iteration </span><span class="s1">{</span><span class="s0">start_iteration</span><span class="s1">:</span><span class="s5">,</span><span class="s1">}</span><span class="s5">&quot;</span><span class="s2">)</span>
+<span class="s1">else</span><span class="s2">:</span>
+    <span class="s0">print</span><span class="s2">(</span><span class="s5">&quot;✓ Starting from scratch&quot;</span><span class="s2">)</span>
+
+<span class="s0">print</span><span class="s2">()</span>
+<span class="s0">print</span><span class="s2">(</span><span class="s5">&quot;=&quot; </span><span class="s2">* </span><span class="s4">60</span><span class="s2">)</span>
+<span class="s0">print</span><span class="s2">(</span><span class="s5">&quot;STARTING TRAINING&quot;</span><span class="s2">)</span>
+<span class="s0">print</span><span class="s2">(</span><span class="s5">&quot;=&quot; </span><span class="s2">* </span><span class="s4">60</span><span class="s2">)</span>
+<span class="s0">print</span><span class="s2">()</span>
+
+<span class="s3"># ============================================================</span>
+<span class="s3"># ITERATION-BASED TRAINING LOOP (with soft-label CE + weighting)</span>
+<span class="s3"># ============================================================</span>
+
+<span class="s3"># Hyperparams for loss balancing (tuneable)</span>
+<span class="s0">pos_cell_weight </span><span class="s2">= </span><span class="s4">5.0  </span><span class="s3"># weight multiplier for cells that contain any keypoint (&gt;=1.0)</span>
+<span class="s0">gaussian_sigma </span><span class="s2">= </span><span class="s4">1.0  </span><span class="s3"># kept for reference if you change generator</span>
+<span class="s0">clip_grad_norm </span><span class="s2">= </span><span class="s4">5.0  </span><span class="s3"># gradient clipping</span>
+<span class="s0">use_pos_weighting </span><span class="s2">= </span><span class="s1">True  </span><span class="s3"># toggle positive-cell weighting</span>
+
+<span class="s0">model</span><span class="s2">.</span><span class="s0">train</span><span class="s2">()</span>
+<span class="s0">running_loss </span><span class="s2">= </span><span class="s4">0.0</span>
+<span class="s0">iteration </span><span class="s2">= </span><span class="s0">start_iteration</span>
+
+<span class="s3"># Create iterator for infinite cycling through dataset</span>
+<span class="s0">train_iterator </span><span class="s2">= </span><span class="s0">cycle</span><span class="s2">(</span><span class="s0">train_loader</span><span class="s2">)</span>
+
+
+<span class="s3"># Helper: soft cross-entropy (per-cell mean)</span>
+<span class="s1">def </span><span class="s0">soft_cross_entropy_from_logits</span><span class="s2">(</span><span class="s0">logits</span><span class="s2">, </span><span class="s0">soft_targets</span><span class="s2">, </span><span class="s0">pos_weighting</span><span class="s2">=</span><span class="s1">True</span><span class="s2">, </span><span class="s0">pos_mult</span><span class="s2">=</span><span class="s4">5.0</span><span class="s2">):</span>
+    <span class="s6">&quot;&quot;&quot; 
+    logits: (B, C, Hc, Wc) 
+    soft_targets: (B, C, Hc, Wc) - floats (not necessarily normalized) 
+    Returns scalar loss averaged over all cells and batch. 
+    &quot;&quot;&quot;</span>
+    <span class="s3"># ensure device/dtype consistency</span>
+    <span class="s0">soft_targets </span><span class="s2">= </span><span class="s0">soft_targets</span><span class="s2">.</span><span class="s0">type_as</span><span class="s2">(</span><span class="s0">logits</span><span class="s2">).</span><span class="s0">to</span><span class="s2">(</span><span class="s0">logits</span><span class="s2">.</span><span class="s0">device</span><span class="s2">)</span>
+
+    <span class="s3"># Normalize per-cell so each cell's channels sum to 1 (makes targets valid distributions)</span>
+    <span class="s0">s </span><span class="s2">= </span><span class="s0">soft_targets</span><span class="s2">.</span><span class="s0">sum</span><span class="s2">(</span><span class="s0">dim</span><span class="s2">=</span><span class="s4">1</span><span class="s2">, </span><span class="s0">keepdim</span><span class="s2">=</span><span class="s1">True</span><span class="s2">)  </span><span class="s3"># (B,1,Hc,Wc)</span>
+    <span class="s0">s </span><span class="s2">= </span><span class="s0">torch</span><span class="s2">.</span><span class="s0">where</span><span class="s2">(</span><span class="s0">s </span><span class="s2">&lt;= </span><span class="s4">0.0</span><span class="s2">, </span><span class="s0">torch</span><span class="s2">.</span><span class="s0">ones_like</span><span class="s2">(</span><span class="s0">s</span><span class="s2">), </span><span class="s0">s</span><span class="s2">)  </span><span class="s3"># avoid division by zero</span>
+    <span class="s0">targets_norm </span><span class="s2">= </span><span class="s0">soft_targets </span><span class="s2">/ </span><span class="s0">s</span>
+
+    <span class="s3"># log-probabilities over channels</span>
+    <span class="s0">log_probs </span><span class="s2">= </span><span class="s0">F</span><span class="s2">.</span><span class="s0">log_softmax</span><span class="s2">(</span><span class="s0">logits</span><span class="s2">, </span><span class="s0">dim</span><span class="s2">=</span><span class="s4">1</span><span class="s2">)  </span><span class="s3"># (B,C,Hc,Wc)</span>
+
+    <span class="s3"># per-cell loss = - sum_c target_c * log_probs_c</span>
+    <span class="s0">per_cell_loss </span><span class="s2">= - (</span><span class="s0">targets_norm </span><span class="s2">* </span><span class="s0">log_probs</span><span class="s2">).</span><span class="s0">sum</span><span class="s2">(</span><span class="s0">dim</span><span class="s2">=</span><span class="s4">1</span><span class="s2">)  </span><span class="s3"># (B,Hc,Wc)</span>
+
+    <span class="s3"># optional positive-cell weighting</span>
+    <span class="s1">if </span><span class="s0">pos_weighting</span><span class="s2">:</span>
+        <span class="s0">pos_mask </span><span class="s2">= (</span><span class="s0">targets_norm</span><span class="s2">[:, :</span><span class="s4">64</span><span class="s2">].</span><span class="s0">sum</span><span class="s2">(</span><span class="s0">dim</span><span class="s2">=</span><span class="s4">1</span><span class="s2">) &gt; </span><span class="s4">0</span><span class="s2">).</span><span class="s0">float</span><span class="s2">()  </span><span class="s3"># (B,Hc,Wc)</span>
+        <span class="s0">neg_mask </span><span class="s2">= </span><span class="s4">1.0 </span><span class="s2">- </span><span class="s0">pos_mask</span>
+        <span class="s0">weights </span><span class="s2">= </span><span class="s0">neg_mask </span><span class="s2">+ </span><span class="s0">pos_mult </span><span class="s2">* </span><span class="s0">pos_mask</span>
+        <span class="s0">per_cell_loss </span><span class="s2">= </span><span class="s0">per_cell_loss </span><span class="s2">* </span><span class="s0">weights</span>
+
+    <span class="s3"># final scalar: mean across batch &amp; cells</span>
+    <span class="s1">return </span><span class="s0">per_cell_loss</span><span class="s2">.</span><span class="s0">mean</span><span class="s2">()</span>
+
+
+<span class="s3"># Main loop</span>
+<span class="s1">while </span><span class="s0">iteration </span><span class="s2">&lt; </span><span class="s0">num_iterations</span><span class="s2">:</span>
+    <span class="s3"># Get next batch (infinite cycling)</span>
+    <span class="s0">images</span><span class="s2">, </span><span class="s0">targets </span><span class="s2">= </span><span class="s0">next</span><span class="s2">(</span><span class="s0">train_iterator</span><span class="s2">)</span>
+
+    <span class="s3"># Move to device</span>
+    <span class="s0">images </span><span class="s2">= </span><span class="s0">images</span><span class="s2">.</span><span class="s0">to</span><span class="s2">(</span><span class="s0">device</span><span class="s2">)</span>
+    <span class="s0">targets </span><span class="s2">= </span><span class="s0">targets</span><span class="s2">.</span><span class="s0">to</span><span class="s2">(</span><span class="s0">device</span><span class="s2">)</span>
+
+    <span class="s3"># Sanity checks for shapes (run once after resume/start)</span>
+    <span class="s1">if </span><span class="s0">iteration </span><span class="s2">== </span><span class="s0">start_iteration</span><span class="s2">:</span>
+        <span class="s1">assert </span><span class="s0">images</span><span class="s2">.</span><span class="s0">dim</span><span class="s2">() == </span><span class="s4">4 </span><span class="s1">and </span><span class="s0">images</span><span class="s2">.</span><span class="s0">shape</span><span class="s2">[</span><span class="s4">1</span><span class="s2">] == </span><span class="s4">1</span><span class="s2">, </span><span class="s5">f&quot;Images must be (B,1,H,W). Got </span><span class="s1">{</span><span class="s0">images</span><span class="s2">.</span><span class="s0">shape</span><span class="s1">}</span><span class="s5">&quot;</span>
+        <span class="s1">assert </span><span class="s0">targets</span><span class="s2">.</span><span class="s0">dim</span><span class="s2">() == </span><span class="s4">4 </span><span class="s1">and </span><span class="s0">targets</span><span class="s2">.</span><span class="s0">shape</span><span class="s2">[</span><span class="s4">1</span><span class="s2">] == </span><span class="s4">65</span><span class="s2">, </span><span class="s5">f&quot;Targets must be (B,65,Hc,Wc). Got </span><span class="s1">{</span><span class="s0">targets</span><span class="s2">.</span><span class="s0">shape</span><span class="s1">}</span><span class="s5">&quot;</span>
+        <span class="s0">print</span><span class="s2">(</span><span class="s5">&quot;Sanity check passed (shapes):&quot;</span><span class="s2">, </span><span class="s0">images</span><span class="s2">.</span><span class="s0">shape</span><span class="s2">, </span><span class="s0">targets</span><span class="s2">.</span><span class="s0">shape</span><span class="s2">)</span>
+
+    <span class="s3"># Forward pass (raw logits)</span>
+    <span class="s0">logits </span><span class="s2">= </span><span class="s0">model</span><span class="s2">(</span><span class="s0">images</span><span class="s2">, </span><span class="s0">return_logits</span><span class="s2">=</span><span class="s1">True</span><span class="s2">)  </span><span class="s3"># (B, 65, Hc, Wc)</span>
+
+    <span class="s3"># Sanity: shape match</span>
+    <span class="s1">assert </span><span class="s0">logits</span><span class="s2">.</span><span class="s0">dim</span><span class="s2">() == </span><span class="s4">4 </span><span class="s1">and </span><span class="s0">targets</span><span class="s2">.</span><span class="s0">dim</span><span class="s2">() == </span><span class="s4">4</span><span class="s2">, </span><span class="s5">f&quot;Unexpected dims: logits </span><span class="s1">{</span><span class="s0">logits</span><span class="s2">.</span><span class="s0">shape</span><span class="s1">}</span><span class="s5">, targets </span><span class="s1">{</span><span class="s0">targets</span><span class="s2">.</span><span class="s0">shape</span><span class="s1">}</span><span class="s5">&quot;</span>
+    <span class="s0">B</span><span class="s2">, </span><span class="s0">C</span><span class="s2">, </span><span class="s0">Hc</span><span class="s2">, </span><span class="s0">Wc </span><span class="s2">= </span><span class="s0">logits</span><span class="s2">.</span><span class="s0">shape</span>
+    <span class="s1">assert </span><span class="s0">C </span><span class="s2">== </span><span class="s4">65</span><span class="s2">, </span><span class="s5">f&quot;Expected 65 channels, got </span><span class="s1">{</span><span class="s0">C</span><span class="s1">}</span><span class="s5">&quot;</span>
+    <span class="s1">assert </span><span class="s0">targets</span><span class="s2">.</span><span class="s0">shape </span><span class="s2">== (</span><span class="s0">B</span><span class="s2">, </span><span class="s0">C</span><span class="s2">, </span><span class="s0">Hc</span><span class="s2">, </span><span class="s0">Wc</span><span class="s2">), </span><span class="s5">f&quot;Target shape mismatch: </span><span class="s1">{</span><span class="s0">targets</span><span class="s2">.</span><span class="s0">shape</span><span class="s1">} </span><span class="s5">vs logits </span><span class="s1">{</span><span class="s0">logits</span><span class="s2">.</span><span class="s0">shape</span><span class="s1">}</span><span class="s5">&quot;</span>
+
+    <span class="s3"># Compute soft-label cross-entropy (with per-cell normalization and pos weighting)</span>
+    <span class="s0">loss </span><span class="s2">= </span><span class="s0">soft_cross_entropy_from_logits</span><span class="s2">(</span><span class="s0">logits</span><span class="s2">, </span><span class="s0">targets</span><span class="s2">, </span><span class="s0">pos_weighting</span><span class="s2">=</span><span class="s0">use_pos_weighting</span><span class="s2">, </span><span class="s0">pos_mult</span><span class="s2">=</span><span class="s0">pos_cell_weight</span><span class="s2">)</span>
+
+    <span class="s3"># Backward pass</span>
+    <span class="s0">optimizer</span><span class="s2">.</span><span class="s0">zero_grad</span><span class="s2">()</span>
+    <span class="s0">loss</span><span class="s2">.</span><span class="s0">backward</span><span class="s2">()</span>
+    <span class="s3"># gradient clipping for stability</span>
+    <span class="s0">torch</span><span class="s2">.</span><span class="s0">nn</span><span class="s2">.</span><span class="s0">utils</span><span class="s2">.</span><span class="s0">clip_grad_norm_</span><span class="s2">(</span><span class="s0">model</span><span class="s2">.</span><span class="s0">parameters</span><span class="s2">(), </span><span class="s0">max_norm</span><span class="s2">=</span><span class="s0">clip_grad_norm</span><span class="s2">)</span>
+    <span class="s0">optimizer</span><span class="s2">.</span><span class="s0">step</span><span class="s2">()</span>
+    <span class="s0">scheduler</span><span class="s2">.</span><span class="s0">step</span><span class="s2">()</span>
+
+    <span class="s3"># Print progress</span>
+    <span class="s0">iteration </span><span class="s2">+= </span><span class="s4">1</span>
+    <span class="s0">running_loss </span><span class="s2">+= </span><span class="s0">loss</span><span class="s2">.</span><span class="s0">item</span><span class="s2">()</span>
+
+    <span class="s3"># Print training loss (averaged over print_every iters)</span>
+    <span class="s1">if </span><span class="s0">iteration </span><span class="s2">% </span><span class="s0">print_every </span><span class="s2">== </span><span class="s4">0</span><span class="s2">:</span>
+        <span class="s0">avg_loss </span><span class="s2">= </span><span class="s0">running_loss </span><span class="s2">/ </span><span class="s0">print_every</span>
+        <span class="s0">running_loss </span><span class="s2">= </span><span class="s4">0.0</span>
+        <span class="s0">train_losses</span><span class="s2">.</span><span class="s0">append</span><span class="s2">(</span><span class="s0">avg_loss</span><span class="s2">)</span>
+        <span class="s0">print</span><span class="s2">(</span><span class="s5">f&quot;Iter [</span><span class="s1">{</span><span class="s0">iteration</span><span class="s1">:</span><span class="s5">&gt;6</span><span class="s1">}</span><span class="s5">/</span><span class="s1">{</span><span class="s0">num_iterations</span><span class="s1">}</span><span class="s5">] Loss: </span><span class="s1">{</span><span class="s0">avg_loss</span><span class="s1">:</span><span class="s5">.4f</span><span class="s1">}</span><span class="s5">&quot;</span><span class="s2">)</span>
+
+    <span class="s3"># Evaluate on test set</span>
+    <span class="s1">if </span><span class="s0">iteration </span><span class="s2">% </span><span class="s0">eval_every </span><span class="s2">== </span><span class="s4">0</span><span class="s2">:</span>
+        <span class="s0">model</span><span class="s2">.</span><span class="s0">eval</span><span class="s2">()</span>
+        <span class="s0">test_loss </span><span class="s2">= </span><span class="s4">0.0</span>
+        <span class="s0">num_test_batches </span><span class="s2">= </span><span class="s4">0</span>
+
+        <span class="s1">with </span><span class="s0">torch</span><span class="s2">.</span><span class="s0">no_grad</span><span class="s2">():</span>
+            <span class="s1">for </span><span class="s0">test_images</span><span class="s2">, </span><span class="s0">test_targets </span><span class="s1">in </span><span class="s0">test_loader</span><span class="s2">:</span>
+                <span class="s0">test_images </span><span class="s2">= </span><span class="s0">test_images</span><span class="s2">.</span><span class="s0">to</span><span class="s2">(</span><span class="s0">device</span><span class="s2">)</span>
+                <span class="s0">test_targets </span><span class="s2">= </span><span class="s0">test_targets</span><span class="s2">.</span><span class="s0">to</span><span class="s2">(</span><span class="s0">device</span><span class="s2">)</span>
+
+                <span class="s0">logits_val </span><span class="s2">= </span><span class="s0">model</span><span class="s2">(</span><span class="s0">test_images</span><span class="s2">, </span><span class="s0">return_logits</span><span class="s2">=</span><span class="s1">True</span><span class="s2">)</span>
+
+                <span class="s3"># Evaluate with same soft loss logic (normalize per-cell &amp; weighting)</span>
+                <span class="s0">loss_val </span><span class="s2">= </span><span class="s0">soft_cross_entropy_from_logits</span><span class="s2">(</span><span class="s0">logits_val</span><span class="s2">, </span><span class="s0">test_targets</span><span class="s2">,</span>
+                                                          <span class="s0">pos_weighting</span><span class="s2">=</span><span class="s0">use_pos_weighting</span><span class="s2">,</span>
+                                                          <span class="s0">pos_mult</span><span class="s2">=</span><span class="s0">pos_cell_weight</span><span class="s2">)</span>
+
+                <span class="s0">test_loss </span><span class="s2">+= </span><span class="s0">loss_val</span><span class="s2">.</span><span class="s0">item</span><span class="s2">()</span>
+                <span class="s0">num_test_batches </span><span class="s2">+= </span><span class="s4">1</span>
+
+        <span class="s0">avg_test_loss </span><span class="s2">= </span><span class="s0">test_loss </span><span class="s2">/ </span><span class="s0">max</span><span class="s2">(</span><span class="s4">1</span><span class="s2">, </span><span class="s0">num_test_batches</span><span class="s2">)</span>
+        <span class="s0">test_losses</span><span class="s2">.</span><span class="s0">append</span><span class="s2">(</span><span class="s0">avg_test_loss</span><span class="s2">)</span>
+        <span class="s0">print</span><span class="s2">(</span><span class="s5">f&quot;  └─ Test Loss: </span><span class="s1">{</span><span class="s0">avg_test_loss</span><span class="s1">:</span><span class="s5">.4f</span><span class="s1">}</span><span class="s5">&quot;</span><span class="s2">)</span>
+        <span class="s0">model</span><span class="s2">.</span><span class="s0">train</span><span class="s2">()</span>
+
+    <span class="s3"># Save checkpoint</span>
+    <span class="s1">if </span><span class="s0">iteration </span><span class="s2">% </span><span class="s0">save_checkpoint_every </span><span class="s2">== </span><span class="s4">0 </span><span class="s1">or </span><span class="s0">iteration </span><span class="s2">== </span><span class="s0">num_iterations</span><span class="s2">:</span>
+        <span class="s0">save_checkpoint_generic</span><span class="s2">(</span>
+            <span class="s0">checkpoint_dir</span><span class="s2">,</span>
+            <span class="s0">iteration</span><span class="s2">,</span>
+            <span class="s2">{</span>
+                <span class="s5">'iteration'</span><span class="s2">: </span><span class="s0">iteration</span><span class="s2">,</span>
+                <span class="s5">'model_state_dict'</span><span class="s2">: </span><span class="s0">model</span><span class="s2">.</span><span class="s0">state_dict</span><span class="s2">(),</span>
+                <span class="s5">'optimizer_state_dict'</span><span class="s2">: </span><span class="s0">optimizer</span><span class="s2">.</span><span class="s0">state_dict</span><span class="s2">(),</span>
+                <span class="s5">'train_losses'</span><span class="s2">: </span><span class="s0">train_losses</span><span class="s2">,</span>
+                <span class="s5">'test_losses'</span><span class="s2">: </span><span class="s0">test_losses</span><span class="s2">,</span>
+                <span class="s5">'config'</span><span class="s2">: {</span>
+                    <span class="s5">'learning_rate'</span><span class="s2">: </span><span class="s0">learning_rate</span><span class="s2">,</span>
+                    <span class="s5">'batch_size'</span><span class="s2">: </span><span class="s0">batch_size</span><span class="s2">,</span>
+                    <span class="s5">'num_iterations'</span><span class="s2">: </span><span class="s0">num_iterations</span><span class="s2">,</span>
+                    <span class="s5">'eval_every'</span><span class="s2">: </span><span class="s0">eval_every</span><span class="s2">,</span>
+                    <span class="s5">'print_every'</span><span class="s2">: </span><span class="s0">print_every</span><span class="s2">,</span>
+                    <span class="s5">'image_size'</span><span class="s2">: </span><span class="s0">image_size</span><span class="s2">,</span>
+                <span class="s2">}</span>
+            <span class="s2">},</span>
+            <span class="s0">max_checkpoints</span><span class="s2">=</span><span class="s0">max_checkpoints</span>
+        <span class="s2">)</span>
+        <span class="s0">print</span><span class="s2">(</span><span class="s5">f&quot;  └─ Checkpoint saved&quot;</span><span class="s2">)</span>
+
+<span class="s0">print</span><span class="s2">()</span>
+<span class="s0">print</span><span class="s2">(</span><span class="s5">&quot;=&quot; </span><span class="s2">* </span><span class="s4">60</span><span class="s2">)</span>
+<span class="s0">print</span><span class="s2">(</span><span class="s5">&quot;✓ TRAINING COMPLETE!&quot;</span><span class="s2">)</span>
+<span class="s0">print</span><span class="s2">(</span><span class="s5">&quot;=&quot; </span><span class="s2">* </span><span class="s4">60</span><span class="s2">)</span>
+<span class="s1">if </span><span class="s0">len</span><span class="s2">(</span><span class="s0">train_losses</span><span class="s2">) &gt; </span><span class="s4">0</span><span class="s2">:</span>
+    <span class="s0">print</span><span class="s2">(</span><span class="s5">f&quot;Final Training Loss: </span><span class="s1">{</span><span class="s0">train_losses</span><span class="s2">[-</span><span class="s4">1</span><span class="s2">]</span><span class="s1">:</span><span class="s5">.4f</span><span class="s1">}</span><span class="s5">&quot;</span><span class="s2">)</span>
+<span class="s1">if </span><span class="s0">len</span><span class="s2">(</span><span class="s0">test_losses</span><span class="s2">) &gt; </span><span class="s4">0</span><span class="s2">:</span>
+    <span class="s0">print</span><span class="s2">(</span><span class="s5">f&quot;Final Test Loss: </span><span class="s1">{</span><span class="s0">test_losses</span><span class="s2">[-</span><span class="s4">1</span><span class="s2">]</span><span class="s1">:</span><span class="s5">.4f</span><span class="s1">}</span><span class="s5">&quot;</span><span class="s2">)</span>
+<span class="s0">print</span><span class="s2">()</span>
+<hr class="ls0"><span class="s0">#%% 
+</span><span class="s3"># ============================================================</span>
+<span class="s3"># IMPROVED PLOT TRAINING CURVES - SEPARATE GRAPHS</span>
+<span class="s3"># ============================================================</span>
+<span class="s3"># Copy this code into a new cell in your notebook</span>
+
+<span class="s1">import </span><span class="s0">numpy </span><span class="s1">as </span><span class="s0">np</span>
+<span class="s1">import </span><span class="s0">matplotlib</span><span class="s2">.</span><span class="s0">pyplot </span><span class="s1">as </span><span class="s0">plt</span>
+<span class="s1">from </span><span class="s0">scipy</span><span class="s2">.</span><span class="s0">interpolate </span><span class="s1">import </span><span class="s0">interp1d</span>
+
+<span class="s3"># Load checkpoint to get training history</span>
+<span class="s0">checkpoint_dir </span><span class="s2">= </span><span class="s5">'./checkpoints'</span>
+<span class="s0">device </span><span class="s2">= </span><span class="s0">torch</span><span class="s2">.</span><span class="s0">device</span><span class="s2">(</span><span class="s5">'cuda' </span><span class="s1">if </span><span class="s0">torch</span><span class="s2">.</span><span class="s0">cuda</span><span class="s2">.</span><span class="s0">is_available</span><span class="s2">() </span><span class="s1">else </span><span class="s5">'cpu'</span><span class="s2">)</span>
+<span class="s0">checkpoint </span><span class="s2">= </span><span class="s0">load_checkpoint_generic</span><span class="s2">(</span><span class="s0">checkpoint_dir</span><span class="s2">, </span><span class="s0">device</span><span class="s2">)</span>
+<span class="s1">if </span><span class="s0">checkpoint</span><span class="s2">:</span>
+    <span class="s0">train_losses </span><span class="s2">= </span><span class="s0">checkpoint</span><span class="s2">.</span><span class="s0">get</span><span class="s2">(</span><span class="s5">'train_losses'</span><span class="s2">, [])</span>
+    <span class="s0">test_losses </span><span class="s2">= </span><span class="s0">checkpoint</span><span class="s2">.</span><span class="s0">get</span><span class="s2">(</span><span class="s5">'test_losses'</span><span class="s2">, [])</span>
+    <span class="s0">print_every </span><span class="s2">= </span><span class="s0">checkpoint</span><span class="s2">[</span><span class="s5">'config'</span><span class="s2">][</span><span class="s5">'print_every'</span><span class="s2">]</span>
+    <span class="s0">eval_every </span><span class="s2">= </span><span class="s0">checkpoint</span><span class="s2">[</span><span class="s5">'config'</span><span class="s2">][</span><span class="s5">'eval_every'</span><span class="s2">]</span>
+    <span class="s0">iteration </span><span class="s2">= </span><span class="s0">checkpoint</span><span class="s2">[</span><span class="s5">'iteration'</span><span class="s2">]</span>
+    <span class="s0">print</span><span class="s2">(</span><span class="s5">f&quot;✓ Loaded training history from checkpoint (iteration </span><span class="s1">{</span><span class="s0">iteration</span><span class="s1">:</span><span class="s5">,</span><span class="s1">}</span><span class="s5">)&quot;</span><span class="s2">)</span>
+<span class="s1">else</span><span class="s2">:</span>
+    <span class="s1">raise </span><span class="s0">ValueError</span><span class="s2">(</span><span class="s5">&quot;No checkpoint found for plotting training curves.&quot;</span><span class="s2">)</span>
+
+<span class="s0">print</span><span class="s2">(</span><span class="s5">&quot;=&quot; </span><span class="s2">* </span><span class="s4">60</span><span class="s2">)</span>
+<span class="s0">print</span><span class="s2">(</span><span class="s5">&quot;TRAINING VISUALIZATION&quot;</span><span class="s2">)</span>
+<span class="s0">print</span><span class="s2">(</span><span class="s5">&quot;=&quot; </span><span class="s2">* </span><span class="s4">60</span><span class="s2">)</span>
+<span class="s0">print</span><span class="s2">()</span>
+
+<span class="s1">if </span><span class="s0">len</span><span class="s2">(</span><span class="s0">train_losses</span><span class="s2">) == </span><span class="s4">0 </span><span class="s1">and </span><span class="s0">len</span><span class="s2">(</span><span class="s0">test_losses</span><span class="s2">) == </span><span class="s4">0</span><span class="s2">:</span>
+    <span class="s0">print</span><span class="s2">(</span><span class="s5">&quot;⚠️  No training data to plot. Run the training loop first.&quot;</span><span class="s2">)</span>
+<span class="s1">else</span><span class="s2">:</span>
+    <span class="s3"># Calculate actual iteration numbers for each loss point</span>
+    <span class="s0">train_iterations </span><span class="s2">= </span><span class="s0">np</span><span class="s2">.</span><span class="s0">array</span><span class="s2">([(</span><span class="s0">i </span><span class="s2">+ </span><span class="s4">1</span><span class="s2">) * </span><span class="s0">print_every </span><span class="s1">for </span><span class="s0">i </span><span class="s1">in </span><span class="s0">range</span><span class="s2">(</span><span class="s0">len</span><span class="s2">(</span><span class="s0">train_losses</span><span class="s2">))])</span>
+    <span class="s0">test_iterations </span><span class="s2">= </span><span class="s0">np</span><span class="s2">.</span><span class="s0">array</span><span class="s2">([(</span><span class="s0">i </span><span class="s2">+ </span><span class="s4">1</span><span class="s2">) * </span><span class="s0">eval_every </span><span class="s1">for </span><span class="s0">i </span><span class="s1">in </span><span class="s0">range</span><span class="s2">(</span><span class="s0">len</span><span class="s2">(</span><span class="s0">test_losses</span><span class="s2">))])</span>
+
+    <span class="s3"># Create figure with TWO separate subplots</span>
+    <span class="s0">fig</span><span class="s2">, (</span><span class="s0">ax1</span><span class="s2">, </span><span class="s0">ax2</span><span class="s2">) = </span><span class="s0">plt</span><span class="s2">.</span><span class="s0">subplots</span><span class="s2">(</span><span class="s4">2</span><span class="s2">, </span><span class="s4">1</span><span class="s2">, </span><span class="s0">figsize</span><span class="s2">=(</span><span class="s4">14</span><span class="s2">, </span><span class="s4">10</span><span class="s2">))</span>
+
+    <span class="s3"># ============================================================</span>
+    <span class="s3"># PLOT 1: TRAINING LOSS</span>
+    <span class="s3"># ============================================================</span>
+    <span class="s1">if </span><span class="s0">len</span><span class="s2">(</span><span class="s0">train_losses</span><span class="s2">) &gt; </span><span class="s4">0</span><span class="s2">:</span>
+        <span class="s3"># Plot raw data points</span>
+        <span class="s0">ax1</span><span class="s2">.</span><span class="s0">scatter</span><span class="s2">(</span><span class="s0">train_iterations</span><span class="s2">, </span><span class="s0">train_losses</span><span class="s2">, </span><span class="s0">c</span><span class="s2">=</span><span class="s5">'blue'</span><span class="s2">, </span><span class="s0">s</span><span class="s2">=</span><span class="s4">20</span><span class="s2">, </span><span class="s0">alpha</span><span class="s2">=</span><span class="s4">0.4</span><span class="s2">,</span>
+                    <span class="s0">label</span><span class="s2">=</span><span class="s5">f'Training samples (every </span><span class="s1">{</span><span class="s0">print_every</span><span class="s1">} </span><span class="s5">iters)'</span><span class="s2">, </span><span class="s0">zorder</span><span class="s2">=</span><span class="s4">3</span><span class="s2">)</span>
+
+        <span class="s3"># Smooth with moving average or interpolation (NO extrapolation)</span>
+        <span class="s1">if </span><span class="s0">len</span><span class="s2">(</span><span class="s0">train_losses</span><span class="s2">) &gt; </span><span class="s4">5</span><span class="s2">:</span>
+            <span class="s3"># Interpolate ONLY within the actual data range</span>
+            <span class="s0">smooth_iterations </span><span class="s2">= </span><span class="s0">np</span><span class="s2">.</span><span class="s0">linspace</span><span class="s2">(</span><span class="s0">train_iterations</span><span class="s2">[</span><span class="s4">0</span><span class="s2">], </span><span class="s0">train_iterations</span><span class="s2">[-</span><span class="s4">1</span><span class="s2">], </span><span class="s4">500</span><span class="s2">)</span>
+            <span class="s0">train_interpolator </span><span class="s2">= </span><span class="s0">interp1d</span><span class="s2">(</span><span class="s0">train_iterations</span><span class="s2">, </span><span class="s0">train_losses</span><span class="s2">, </span><span class="s0">kind</span><span class="s2">=</span><span class="s5">'cubic'</span><span class="s2">)</span>
+            <span class="s0">smooth_train </span><span class="s2">= </span><span class="s0">train_interpolator</span><span class="s2">(</span><span class="s0">smooth_iterations</span><span class="s2">)</span>
+            <span class="s0">ax1</span><span class="s2">.</span><span class="s0">plot</span><span class="s2">(</span><span class="s0">smooth_iterations</span><span class="s2">, </span><span class="s0">smooth_train</span><span class="s2">, </span><span class="s5">'b-'</span><span class="s2">,</span>
+                     <span class="s0">label</span><span class="s2">=</span><span class="s5">'Smoothed'</span><span class="s2">, </span><span class="s0">linewidth</span><span class="s2">=</span><span class="s4">2.5</span><span class="s2">, </span><span class="s0">alpha</span><span class="s2">=</span><span class="s4">0.85</span><span class="s2">)</span>
+        <span class="s1">else</span><span class="s2">:</span>
+            <span class="s3"># If too few points, just connect them</span>
+            <span class="s0">ax1</span><span class="s2">.</span><span class="s0">plot</span><span class="s2">(</span><span class="s0">train_iterations</span><span class="s2">, </span><span class="s0">train_losses</span><span class="s2">, </span><span class="s5">'b-'</span><span class="s2">, </span><span class="s0">linewidth</span><span class="s2">=</span><span class="s4">2</span><span class="s2">, </span><span class="s0">alpha</span><span class="s2">=</span><span class="s4">0.85</span><span class="s2">)</span>
+
+        <span class="s3"># Formatting</span>
+        <span class="s0">ax1</span><span class="s2">.</span><span class="s0">set_xlabel</span><span class="s2">(</span><span class="s5">'Iteration'</span><span class="s2">, </span><span class="s0">fontsize</span><span class="s2">=</span><span class="s4">12</span><span class="s2">, </span><span class="s0">fontweight</span><span class="s2">=</span><span class="s5">'bold'</span><span class="s2">)</span>
+        <span class="s0">ax1</span><span class="s2">.</span><span class="s0">set_ylabel</span><span class="s2">(</span><span class="s5">'Training Loss'</span><span class="s2">, </span><span class="s0">fontsize</span><span class="s2">=</span><span class="s4">12</span><span class="s2">, </span><span class="s0">fontweight</span><span class="s2">=</span><span class="s5">'bold'</span><span class="s2">)</span>
+        <span class="s0">ax1</span><span class="s2">.</span><span class="s0">set_title</span><span class="s2">(</span><span class="s5">f'Training Loss Over Time (</span><span class="s1">{</span><span class="s0">len</span><span class="s2">(</span><span class="s0">train_losses</span><span class="s2">)</span><span class="s1">} </span><span class="s5">samples)'</span><span class="s2">,</span>
+                      <span class="s0">fontsize</span><span class="s2">=</span><span class="s4">14</span><span class="s2">, </span><span class="s0">fontweight</span><span class="s2">=</span><span class="s5">'bold'</span><span class="s2">, </span><span class="s0">pad</span><span class="s2">=</span><span class="s4">10</span><span class="s2">)</span>
+        <span class="s0">ax1</span><span class="s2">.</span><span class="s0">legend</span><span class="s2">(</span><span class="s0">fontsize</span><span class="s2">=</span><span class="s4">10</span><span class="s2">, </span><span class="s0">loc</span><span class="s2">=</span><span class="s5">'upper right'</span><span class="s2">, </span><span class="s0">framealpha</span><span class="s2">=</span><span class="s4">0.95</span><span class="s2">)</span>
+        <span class="s0">ax1</span><span class="s2">.</span><span class="s0">grid</span><span class="s2">(</span><span class="s1">True</span><span class="s2">, </span><span class="s0">alpha</span><span class="s2">=</span><span class="s4">0.3</span><span class="s2">, </span><span class="s0">linestyle</span><span class="s2">=</span><span class="s5">'--'</span><span class="s2">)</span>
+        <span class="s0">ax1</span><span class="s2">.</span><span class="s0">minorticks_on</span><span class="s2">()</span>
+        <span class="s0">ax1</span><span class="s2">.</span><span class="s0">grid</span><span class="s2">(</span><span class="s0">which</span><span class="s2">=</span><span class="s5">'minor'</span><span class="s2">, </span><span class="s0">alpha</span><span class="s2">=</span><span class="s4">0.1</span><span class="s2">, </span><span class="s0">linestyle</span><span class="s2">=</span><span class="s5">':'</span><span class="s2">)</span>
+        <span class="s0">ax1</span><span class="s2">.</span><span class="s0">ticklabel_format</span><span class="s2">(</span><span class="s0">style</span><span class="s2">=</span><span class="s5">'plain'</span><span class="s2">, </span><span class="s0">axis</span><span class="s2">=</span><span class="s5">'x'</span><span class="s2">)</span>
+
+        <span class="s3"># Set x-limit to actual data range (no extrapolation!)</span>
+        <span class="s0">ax1</span><span class="s2">.</span><span class="s0">set_xlim</span><span class="s2">(</span><span class="s4">0</span><span class="s2">, </span><span class="s0">train_iterations</span><span class="s2">[-</span><span class="s4">1</span><span class="s2">] * </span><span class="s4">1.02</span><span class="s2">)</span>
+
+        <span class="s3"># Add vertical line at current iteration</span>
+        <span class="s1">if </span><span class="s0">iteration </span><span class="s2">&lt;= </span><span class="s0">train_iterations</span><span class="s2">[-</span><span class="s4">1</span><span class="s2">]:</span>
+            <span class="s0">ax1</span><span class="s2">.</span><span class="s0">axvline</span><span class="s2">(</span><span class="s0">x</span><span class="s2">=</span><span class="s0">iteration</span><span class="s2">, </span><span class="s0">color</span><span class="s2">=</span><span class="s5">'gray'</span><span class="s2">, </span><span class="s0">linestyle</span><span class="s2">=</span><span class="s5">'--'</span><span class="s2">, </span><span class="s0">linewidth</span><span class="s2">=</span><span class="s4">1.5</span><span class="s2">,</span>
+                        <span class="s0">alpha</span><span class="s2">=</span><span class="s4">0.5</span><span class="s2">, </span><span class="s0">label</span><span class="s2">=</span><span class="s5">f'Current: </span><span class="s1">{</span><span class="s0">iteration</span><span class="s1">:</span><span class="s5">,</span><span class="s1">}</span><span class="s5">'</span><span class="s2">)</span>
+
+        <span class="s0">print</span><span class="s2">(</span><span class="s5">f&quot;✓ Training losses plotted (</span><span class="s1">{</span><span class="s0">len</span><span class="s2">(</span><span class="s0">train_losses</span><span class="s2">)</span><span class="s1">} </span><span class="s5">points, every </span><span class="s1">{</span><span class="s0">print_every</span><span class="s1">} </span><span class="s5">iterations)&quot;</span><span class="s2">)</span>
+        <span class="s0">print</span><span class="s2">(</span><span class="s5">f&quot;  Range: iteration </span><span class="s1">{</span><span class="s0">train_iterations</span><span class="s2">[</span><span class="s4">0</span><span class="s2">]</span><span class="s1">:</span><span class="s5">,</span><span class="s1">} </span><span class="s5">to </span><span class="s1">{</span><span class="s0">train_iterations</span><span class="s2">[-</span><span class="s4">1</span><span class="s2">]</span><span class="s1">:</span><span class="s5">,</span><span class="s1">}</span><span class="s5">&quot;</span><span class="s2">)</span>
+
+    <span class="s3"># ============================================================</span>
+    <span class="s3"># PLOT 2: TEST LOSS</span>
+    <span class="s3"># ============================================================</span>
+    <span class="s1">if </span><span class="s0">len</span><span class="s2">(</span><span class="s0">test_losses</span><span class="s2">) &gt; </span><span class="s4">0</span><span class="s2">:</span>
+        <span class="s3"># Plot raw data points</span>
+        <span class="s0">ax2</span><span class="s2">.</span><span class="s0">scatter</span><span class="s2">(</span><span class="s0">test_iterations</span><span class="s2">, </span><span class="s0">test_losses</span><span class="s2">, </span><span class="s0">c</span><span class="s2">=</span><span class="s5">'red'</span><span class="s2">, </span><span class="s0">s</span><span class="s2">=</span><span class="s4">40</span><span class="s2">, </span><span class="s0">alpha</span><span class="s2">=</span><span class="s4">0.5</span><span class="s2">,</span>
+                    <span class="s0">marker</span><span class="s2">=</span><span class="s5">'s'</span><span class="s2">, </span><span class="s0">label</span><span class="s2">=</span><span class="s5">f'Test samples (every </span><span class="s1">{</span><span class="s0">eval_every</span><span class="s1">} </span><span class="s5">iters)'</span><span class="s2">, </span><span class="s0">zorder</span><span class="s2">=</span><span class="s4">3</span><span class="s2">)</span>
+
+        <span class="s3"># Smooth with interpolation (NO extrapolation)</span>
+        <span class="s1">if </span><span class="s0">len</span><span class="s2">(</span><span class="s0">test_losses</span><span class="s2">) &gt; </span><span class="s4">5</span><span class="s2">:</span>
+            <span class="s3"># Interpolate ONLY within the actual data range</span>
+            <span class="s0">smooth_test_iterations </span><span class="s2">= </span><span class="s0">np</span><span class="s2">.</span><span class="s0">linspace</span><span class="s2">(</span><span class="s0">test_iterations</span><span class="s2">[</span><span class="s4">0</span><span class="s2">], </span><span class="s0">test_iterations</span><span class="s2">[-</span><span class="s4">1</span><span class="s2">], </span><span class="s4">500</span><span class="s2">)</span>
+            <span class="s0">test_interpolator </span><span class="s2">= </span><span class="s0">interp1d</span><span class="s2">(</span><span class="s0">test_iterations</span><span class="s2">, </span><span class="s0">test_losses</span><span class="s2">, </span><span class="s0">kind</span><span class="s2">=</span><span class="s5">'cubic'</span><span class="s2">)</span>
+            <span class="s0">smooth_test </span><span class="s2">= </span><span class="s0">test_interpolator</span><span class="s2">(</span><span class="s0">smooth_test_iterations</span><span class="s2">)</span>
+            <span class="s0">ax2</span><span class="s2">.</span><span class="s0">plot</span><span class="s2">(</span><span class="s0">smooth_test_iterations</span><span class="s2">, </span><span class="s0">smooth_test</span><span class="s2">, </span><span class="s5">'r-'</span><span class="s2">,</span>
+                     <span class="s0">label</span><span class="s2">=</span><span class="s5">'Smoothed'</span><span class="s2">, </span><span class="s0">linewidth</span><span class="s2">=</span><span class="s4">2.5</span><span class="s2">, </span><span class="s0">alpha</span><span class="s2">=</span><span class="s4">0.85</span><span class="s2">)</span>
+        <span class="s1">else</span><span class="s2">:</span>
+            <span class="s3"># If too few points, just connect them</span>
+            <span class="s0">ax2</span><span class="s2">.</span><span class="s0">plot</span><span class="s2">(</span><span class="s0">test_iterations</span><span class="s2">, </span><span class="s0">test_losses</span><span class="s2">, </span><span class="s5">'r-'</span><span class="s2">, </span><span class="s0">linewidth</span><span class="s2">=</span><span class="s4">2</span><span class="s2">, </span><span class="s0">alpha</span><span class="s2">=</span><span class="s4">0.85</span><span class="s2">)</span>
+
+        <span class="s3"># Formatting</span>
+        <span class="s0">ax2</span><span class="s2">.</span><span class="s0">set_xlabel</span><span class="s2">(</span><span class="s5">'Iteration'</span><span class="s2">, </span><span class="s0">fontsize</span><span class="s2">=</span><span class="s4">12</span><span class="s2">, </span><span class="s0">fontweight</span><span class="s2">=</span><span class="s5">'bold'</span><span class="s2">)</span>
+        <span class="s0">ax2</span><span class="s2">.</span><span class="s0">set_ylabel</span><span class="s2">(</span><span class="s5">'Test Loss'</span><span class="s2">, </span><span class="s0">fontsize</span><span class="s2">=</span><span class="s4">12</span><span class="s2">, </span><span class="s0">fontweight</span><span class="s2">=</span><span class="s5">'bold'</span><span class="s2">)</span>
+        <span class="s0">ax2</span><span class="s2">.</span><span class="s0">set_title</span><span class="s2">(</span><span class="s5">f'Test Loss Over Time (</span><span class="s1">{</span><span class="s0">len</span><span class="s2">(</span><span class="s0">test_losses</span><span class="s2">)</span><span class="s1">} </span><span class="s5">samples)'</span><span class="s2">,</span>
+                      <span class="s0">fontsize</span><span class="s2">=</span><span class="s4">14</span><span class="s2">, </span><span class="s0">fontweight</span><span class="s2">=</span><span class="s5">'bold'</span><span class="s2">, </span><span class="s0">pad</span><span class="s2">=</span><span class="s4">10</span><span class="s2">)</span>
+        <span class="s0">ax2</span><span class="s2">.</span><span class="s0">legend</span><span class="s2">(</span><span class="s0">fontsize</span><span class="s2">=</span><span class="s4">10</span><span class="s2">, </span><span class="s0">loc</span><span class="s2">=</span><span class="s5">'upper right'</span><span class="s2">, </span><span class="s0">framealpha</span><span class="s2">=</span><span class="s4">0.95</span><span class="s2">)</span>
+        <span class="s0">ax2</span><span class="s2">.</span><span class="s0">grid</span><span class="s2">(</span><span class="s1">True</span><span class="s2">, </span><span class="s0">alpha</span><span class="s2">=</span><span class="s4">0.3</span><span class="s2">, </span><span class="s0">linestyle</span><span class="s2">=</span><span class="s5">'--'</span><span class="s2">)</span>
+        <span class="s0">ax2</span><span class="s2">.</span><span class="s0">minorticks_on</span><span class="s2">()</span>
+        <span class="s0">ax2</span><span class="s2">.</span><span class="s0">grid</span><span class="s2">(</span><span class="s0">which</span><span class="s2">=</span><span class="s5">'minor'</span><span class="s2">, </span><span class="s0">alpha</span><span class="s2">=</span><span class="s4">0.1</span><span class="s2">, </span><span class="s0">linestyle</span><span class="s2">=</span><span class="s5">':'</span><span class="s2">)</span>
+        <span class="s0">ax2</span><span class="s2">.</span><span class="s0">ticklabel_format</span><span class="s2">(</span><span class="s0">style</span><span class="s2">=</span><span class="s5">'plain'</span><span class="s2">, </span><span class="s0">axis</span><span class="s2">=</span><span class="s5">'x'</span><span class="s2">)</span>
+
+        <span class="s3"># Set x-limit to actual data range (no extrapolation!)</span>
+        <span class="s0">ax2</span><span class="s2">.</span><span class="s0">set_xlim</span><span class="s2">(</span><span class="s4">0</span><span class="s2">, </span><span class="s0">test_iterations</span><span class="s2">[-</span><span class="s4">1</span><span class="s2">] * </span><span class="s4">1.02</span><span class="s2">)</span>
+
+        <span class="s3"># Add vertical line at current iteration</span>
+        <span class="s1">if </span><span class="s0">iteration </span><span class="s2">&lt;= </span><span class="s0">test_iterations</span><span class="s2">[-</span><span class="s4">1</span><span class="s2">]:</span>
+            <span class="s0">ax2</span><span class="s2">.</span><span class="s0">axvline</span><span class="s2">(</span><span class="s0">x</span><span class="s2">=</span><span class="s0">iteration</span><span class="s2">, </span><span class="s0">color</span><span class="s2">=</span><span class="s5">'gray'</span><span class="s2">, </span><span class="s0">linestyle</span><span class="s2">=</span><span class="s5">'--'</span><span class="s2">, </span><span class="s0">linewidth</span><span class="s2">=</span><span class="s4">1.5</span><span class="s2">,</span>
+                        <span class="s0">alpha</span><span class="s2">=</span><span class="s4">0.5</span><span class="s2">, </span><span class="s0">label</span><span class="s2">=</span><span class="s5">f'Current: </span><span class="s1">{</span><span class="s0">iteration</span><span class="s1">:</span><span class="s5">,</span><span class="s1">}</span><span class="s5">'</span><span class="s2">)</span>
+
+        <span class="s0">print</span><span class="s2">(</span><span class="s5">f&quot;✓ Test losses plotted (</span><span class="s1">{</span><span class="s0">len</span><span class="s2">(</span><span class="s0">test_losses</span><span class="s2">)</span><span class="s1">} </span><span class="s5">points, every </span><span class="s1">{</span><span class="s0">eval_every</span><span class="s1">} </span><span class="s5">iterations)&quot;</span><span class="s2">)</span>
+        <span class="s0">print</span><span class="s2">(</span><span class="s5">f&quot;  Range: iteration </span><span class="s1">{</span><span class="s0">test_iterations</span><span class="s2">[</span><span class="s4">0</span><span class="s2">]</span><span class="s1">:</span><span class="s5">,</span><span class="s1">} </span><span class="s5">to </span><span class="s1">{</span><span class="s0">test_iterations</span><span class="s2">[-</span><span class="s4">1</span><span class="s2">]</span><span class="s1">:</span><span class="s5">,</span><span class="s1">}</span><span class="s5">&quot;</span><span class="s2">)</span>
+
+    <span class="s0">plt</span><span class="s2">.</span><span class="s0">tight_layout</span><span class="s2">()</span>
+    <span class="s0">plt</span><span class="s2">.</span><span class="s0">show</span><span class="s2">()</span>
+
+    <span class="s3"># ============================================================</span>
+    <span class="s3"># STATISTICS</span>
+    <span class="s3"># ============================================================</span>
+    <span class="s0">print</span><span class="s2">()</span>
+    <span class="s0">print</span><span class="s2">(</span><span class="s5">&quot;=&quot; </span><span class="s2">* </span><span class="s4">60</span><span class="s2">)</span>
+    <span class="s0">print</span><span class="s2">(</span><span class="s5">&quot;STATISTICS&quot;</span><span class="s2">)</span>
+    <span class="s0">print</span><span class="s2">(</span><span class="s5">&quot;=&quot; </span><span class="s2">* </span><span class="s4">60</span><span class="s2">)</span>
+    <span class="s0">print</span><span class="s2">(</span><span class="s5">f&quot;Checkpoint iteration: </span><span class="s1">{</span><span class="s0">iteration</span><span class="s1">:</span><span class="s5">,</span><span class="s1">}</span><span class="s5">&quot;</span><span class="s2">)</span>
+    <span class="s0">print</span><span class="s2">()</span>
+    <span class="s0">print</span><span class="s2">(</span><span class="s5">f&quot;Sampling rates:&quot;</span><span class="s2">)</span>
+    <span class="s0">print</span><span class="s2">(</span><span class="s5">f&quot;  Training loss: every </span><span class="s1">{</span><span class="s0">print_every</span><span class="s1">} </span><span class="s5">iterations (</span><span class="s1">{</span><span class="s0">len</span><span class="s2">(</span><span class="s0">train_losses</span><span class="s2">)</span><span class="s1">} </span><span class="s5">samples)&quot;</span><span class="s2">)</span>
+    <span class="s0">print</span><span class="s2">(</span><span class="s5">f&quot;  Test loss:     every </span><span class="s1">{</span><span class="s0">eval_every</span><span class="s1">} </span><span class="s5">iterations (</span><span class="s1">{</span><span class="s0">len</span><span class="s2">(</span><span class="s0">test_losses</span><span class="s2">)</span><span class="s1">} </span><span class="s5">samples)&quot;</span><span class="s2">)</span>
+    <span class="s0">print</span><span class="s2">()</span>
+
+    <span class="s1">if </span><span class="s0">len</span><span class="s2">(</span><span class="s0">train_losses</span><span class="s2">) &gt; </span><span class="s4">0</span><span class="s2">:</span>
+        <span class="s0">best_train_idx </span><span class="s2">= </span><span class="s0">np</span><span class="s2">.</span><span class="s0">argmin</span><span class="s2">(</span><span class="s0">train_losses</span><span class="s2">)</span>
+        <span class="s0">print</span><span class="s2">(</span><span class="s5">&quot;Training Loss:&quot;</span><span class="s2">)</span>
+        <span class="s0">print</span><span class="s2">(</span><span class="s5">f&quot;  Final: </span><span class="s1">{</span><span class="s0">train_losses</span><span class="s2">[-</span><span class="s4">1</span><span class="s2">]</span><span class="s1">:</span><span class="s5">.6f</span><span class="s1">} </span><span class="s5">(at iteration </span><span class="s1">{</span><span class="s0">train_iterations</span><span class="s2">[-</span><span class="s4">1</span><span class="s2">]</span><span class="s1">:</span><span class="s5">,</span><span class="s1">}</span><span class="s5">)&quot;</span><span class="s2">)</span>
+        <span class="s0">print</span><span class="s2">(</span><span class="s5">f&quot;  Best:  </span><span class="s1">{</span><span class="s0">train_losses</span><span class="s2">[</span><span class="s0">best_train_idx</span><span class="s2">]</span><span class="s1">:</span><span class="s5">.6f</span><span class="s1">} </span><span class="s5">(at iteration </span><span class="s1">{</span><span class="s0">train_iterations</span><span class="s2">[</span><span class="s0">best_train_idx</span><span class="s2">]</span><span class="s1">:</span><span class="s5">,</span><span class="s1">}</span><span class="s5">)&quot;</span><span class="s2">)</span>
+        <span class="s0">print</span><span class="s2">()</span>
+
+    <span class="s1">if </span><span class="s0">len</span><span class="s2">(</span><span class="s0">test_losses</span><span class="s2">) &gt; </span><span class="s4">0</span><span class="s2">:</span>
+        <span class="s0">best_test_idx </span><span class="s2">= </span><span class="s0">np</span><span class="s2">.</span><span class="s0">argmin</span><span class="s2">(</span><span class="s0">test_losses</span><span class="s2">)</span>
+        <span class="s0">print</span><span class="s2">(</span><span class="s5">&quot;Test Loss:&quot;</span><span class="s2">)</span>
+        <span class="s0">print</span><span class="s2">(</span><span class="s5">f&quot;  Final: </span><span class="s1">{</span><span class="s0">test_losses</span><span class="s2">[-</span><span class="s4">1</span><span class="s2">]</span><span class="s1">:</span><span class="s5">.6f</span><span class="s1">} </span><span class="s5">(at iteration </span><span class="s1">{</span><span class="s0">test_iterations</span><span class="s2">[-</span><span class="s4">1</span><span class="s2">]</span><span class="s1">:</span><span class="s5">,</span><span class="s1">}</span><span class="s5">)&quot;</span><span class="s2">)</span>
+        <span class="s0">print</span><span class="s2">(</span><span class="s5">f&quot;  Best:  </span><span class="s1">{</span><span class="s0">test_losses</span><span class="s2">[</span><span class="s0">best_test_idx</span><span class="s2">]</span><span class="s1">:</span><span class="s5">.6f</span><span class="s1">} </span><span class="s5">(at iteration </span><span class="s1">{</span><span class="s0">test_iterations</span><span class="s2">[</span><span class="s0">best_test_idx</span><span class="s2">]</span><span class="s1">:</span><span class="s5">,</span><span class="s1">}</span><span class="s5">)&quot;</span><span class="s2">)</span>
+        <span class="s0">print</span><span class="s2">()</span>
+
+    <span class="s0">print</span><span class="s2">(</span><span class="s5">&quot;=&quot; </span><span class="s2">* </span><span class="s4">60</span><span class="s2">)</span>
+<hr class="ls0"><span class="s0">#%% md 
+35k changed test dataset 
+random test dataset evaluation 
+</span></pre>
+</body>
+</html>

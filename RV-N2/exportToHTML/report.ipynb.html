@@ -1,0 +1,827 @@
+<html>
+<head>
+<title>report.ipynb</title>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<style type="text/css">
+.s0 { color: #bcbec4;}
+.s1 { color: #cf8e6d;}
+.s2 { color: #bcbec4;}
+.s3 { color: #7a7e85;}
+.s4 { color: #6aab73;}
+.s5 { color: #2aacb8;}
+.ls0 { height: 1px; border-width: 0; color: #43454a; background-color:#43454a}
+</style>
+</head>
+<body bgcolor="#1e1f22">
+<table CELLSPACING=0 CELLPADDING=5 COLS=1 WIDTH="100%" BGCOLOR="#606060" >
+<tr><td><center>
+<font face="Arial, Helvetica" color="#000000">
+report.ipynb</font>
+</center></td></tr></table>
+<pre><span class="s0">#%% 
+</span><span class="s1">import </span><span class="s0">numpy </span><span class="s1">as </span><span class="s0">np</span>
+<span class="s1">import </span><span class="s0">matplotlib</span><span class="s2">.</span><span class="s0">pyplot </span><span class="s1">as </span><span class="s0">plt</span>
+<span class="s1">from </span><span class="s0">Generator </span><span class="s1">import </span><span class="s0">generate_synthetic_image</span>
+<span class="s1">from </span><span class="s0">Models </span><span class="s1">import </span><span class="s0">KeypointDataset</span><span class="s2">, </span><span class="s0">extract_keypoints_from_target</span>
+
+<span class="s1">import </span><span class="s0">matplotlib</span><span class="s2">.</span><span class="s0">pyplot </span><span class="s1">as </span><span class="s0">plt</span>
+<span class="s1">import </span><span class="s0">numpy </span><span class="s1">as </span><span class="s0">np</span>
+
+<span class="s1">import </span><span class="s0">random</span>
+
+<span class="s3"># Test all shape types</span>
+<span class="s0">shape_types </span><span class="s2">= [</span><span class="s4">&quot;triangle&quot;</span><span class="s2">, </span><span class="s4">&quot;quadrilateral&quot;</span><span class="s2">, </span><span class="s4">&quot;star&quot;</span><span class="s2">, </span><span class="s4">&quot;checkerboard&quot;</span><span class="s2">, </span><span class="s4">&quot;cube&quot;</span><span class="s2">, </span><span class="s4">&quot;multiple&quot;</span><span class="s2">]</span><hr class="ls0"><span class="s0">#%% 
+</span><span class="s3"># ============================================================</span>
+<span class="s3"># TEST 1: RGB Generation (for visualization/testing)</span>
+<span class="s3"># ============================================================</span>
+<span class="s0">print</span><span class="s2">(</span><span class="s4">&quot;TEST 1: RGB Image Generation&quot;</span><span class="s2">)</span>
+<span class="s0">print</span><span class="s2">(</span><span class="s4">&quot;-&quot; </span><span class="s2">* </span><span class="s5">70</span><span class="s2">)</span>
+
+<span class="s0">fig</span><span class="s2">, </span><span class="s0">axes </span><span class="s2">= </span><span class="s0">plt</span><span class="s2">.</span><span class="s0">subplots</span><span class="s2">(</span><span class="s5">2</span><span class="s2">, </span><span class="s5">3</span><span class="s2">, </span><span class="s0">figsize</span><span class="s2">=(</span><span class="s5">15</span><span class="s2">, </span><span class="s5">10</span><span class="s2">))</span>
+<span class="s0">axes </span><span class="s2">= </span><span class="s0">axes</span><span class="s2">.</span><span class="s0">ravel</span><span class="s2">()</span>
+
+<span class="s1">for </span><span class="s0">i</span><span class="s2">, </span><span class="s0">shape_type </span><span class="s1">in </span><span class="s0">enumerate</span><span class="s2">(</span><span class="s0">shape_types</span><span class="s2">):</span>
+    <span class="s0">img</span><span class="s2">, </span><span class="s0">keypoints </span><span class="s2">= </span><span class="s0">generate_synthetic_image</span><span class="s2">(</span>
+        <span class="s5">256</span><span class="s2">, </span><span class="s5">256</span><span class="s2">,</span>
+        <span class="s0">shape_type</span><span class="s2">=</span><span class="s0">shape_type</span><span class="s2">,</span>
+        <span class="s0">use_homography</span><span class="s2">=</span><span class="s1">False</span><span class="s2">,</span>
+        <span class="s0">grayscale</span><span class="s2">=</span><span class="s1">False  </span><span class="s3"># RGB mode</span>
+    <span class="s2">)</span>
+
+    <span class="s0">axes</span><span class="s2">[</span><span class="s0">i</span><span class="s2">].</span><span class="s0">imshow</span><span class="s2">(</span><span class="s0">img</span><span class="s2">)  </span><span class="s3"># RGB image - no cmap needed</span>
+    <span class="s0">axes</span><span class="s2">[</span><span class="s0">i</span><span class="s2">].</span><span class="s0">scatter</span><span class="s2">(</span><span class="s0">keypoints</span><span class="s2">[:, </span><span class="s5">0</span><span class="s2">], </span><span class="s0">keypoints</span><span class="s2">[:, </span><span class="s5">1</span><span class="s2">], </span><span class="s0">c</span><span class="s2">=</span><span class="s4">'red'</span><span class="s2">, </span><span class="s0">s</span><span class="s2">=</span><span class="s5">30</span><span class="s2">, </span><span class="s0">marker</span><span class="s2">=</span><span class="s4">'x'</span><span class="s2">, </span><span class="s0">linewidths</span><span class="s2">=</span><span class="s5">2</span><span class="s2">)</span>
+    <span class="s0">axes</span><span class="s2">[</span><span class="s0">i</span><span class="s2">].</span><span class="s0">set_title</span><span class="s2">(</span><span class="s4">f&quot;</span><span class="s1">{</span><span class="s0">shape_type</span><span class="s2">.</span><span class="s0">capitalize</span><span class="s2">()</span><span class="s1">} </span><span class="s4">RGB (</span><span class="s1">{</span><span class="s0">len</span><span class="s2">(</span><span class="s0">keypoints</span><span class="s2">)</span><span class="s1">} </span><span class="s4">keypoints)&quot;</span><span class="s2">)</span>
+    <span class="s0">axes</span><span class="s2">[</span><span class="s0">i</span><span class="s2">].</span><span class="s0">axis</span><span class="s2">(</span><span class="s4">'off'</span><span class="s2">)</span>
+
+    <span class="s0">print</span><span class="s2">(</span><span class="s4">f&quot;✓ </span><span class="s1">{</span><span class="s0">shape_type</span><span class="s1">}</span><span class="s4">: shape=</span><span class="s1">{</span><span class="s0">img</span><span class="s2">.</span><span class="s0">shape</span><span class="s1">}</span><span class="s4">, dtype=</span><span class="s1">{</span><span class="s0">img</span><span class="s2">.</span><span class="s0">dtype</span><span class="s1">}</span><span class="s4">, keypoints=</span><span class="s1">{</span><span class="s0">len</span><span class="s2">(</span><span class="s0">keypoints</span><span class="s2">)</span><span class="s1">}</span><span class="s4">&quot;</span><span class="s2">)</span>
+
+<span class="s0">plt</span><span class="s2">.</span><span class="s0">suptitle</span><span class="s2">(</span><span class="s4">&quot;RGB Image Generation (Colored)&quot;</span><span class="s2">, </span><span class="s0">fontsize</span><span class="s2">=</span><span class="s5">16</span><span class="s2">, </span><span class="s0">fontweight</span><span class="s2">=</span><span class="s4">'bold'</span><span class="s2">)</span>
+<span class="s0">plt</span><span class="s2">.</span><span class="s0">tight_layout</span><span class="s2">()</span>
+<span class="s0">plt</span><span class="s2">.</span><span class="s0">show</span><span class="s2">()</span>
+
+<span class="s0">print</span><span class="s2">()</span><hr class="ls0"><span class="s0">#%% 
+</span><span class="s3"># ============================================================</span>
+<span class="s3"># TEST 2: Grayscale Generation (for training dataset)</span>
+<span class="s3"># ============================================================</span>
+<span class="s0">print</span><span class="s2">(</span><span class="s4">&quot;TEST 2: Grayscale Image Generation&quot;</span><span class="s2">)</span>
+<span class="s0">print</span><span class="s2">(</span><span class="s4">&quot;-&quot; </span><span class="s2">* </span><span class="s5">70</span><span class="s2">)</span>
+
+<span class="s0">fig</span><span class="s2">, </span><span class="s0">axes </span><span class="s2">= </span><span class="s0">plt</span><span class="s2">.</span><span class="s0">subplots</span><span class="s2">(</span><span class="s5">2</span><span class="s2">, </span><span class="s5">3</span><span class="s2">, </span><span class="s0">figsize</span><span class="s2">=(</span><span class="s5">15</span><span class="s2">, </span><span class="s5">10</span><span class="s2">))</span>
+<span class="s0">axes </span><span class="s2">= </span><span class="s0">axes</span><span class="s2">.</span><span class="s0">ravel</span><span class="s2">()</span>
+
+<span class="s1">for </span><span class="s0">i</span><span class="s2">, </span><span class="s0">shape_type </span><span class="s1">in </span><span class="s0">enumerate</span><span class="s2">(</span><span class="s0">shape_types</span><span class="s2">):</span>
+    <span class="s0">img</span><span class="s2">, </span><span class="s0">keypoints </span><span class="s2">= </span><span class="s0">generate_synthetic_image</span><span class="s2">(</span>
+        <span class="s5">256</span><span class="s2">, </span><span class="s5">256</span><span class="s2">,</span>
+        <span class="s0">shape_type</span><span class="s2">=</span><span class="s0">shape_type</span><span class="s2">,</span>
+        <span class="s0">use_homography</span><span class="s2">=</span><span class="s1">False</span><span class="s2">,</span>
+        <span class="s0">grayscale</span><span class="s2">=</span><span class="s1">True  </span><span class="s3"># Grayscale mode</span>
+    <span class="s2">)</span>
+
+    <span class="s0">axes</span><span class="s2">[</span><span class="s0">i</span><span class="s2">].</span><span class="s0">imshow</span><span class="s2">(</span><span class="s0">img</span><span class="s2">, </span><span class="s0">cmap</span><span class="s2">=</span><span class="s4">'gray'</span><span class="s2">)  </span><span class="s3"># Grayscale - use gray colormap</span>
+    <span class="s0">axes</span><span class="s2">[</span><span class="s0">i</span><span class="s2">].</span><span class="s0">scatter</span><span class="s2">(</span><span class="s0">keypoints</span><span class="s2">[:, </span><span class="s5">0</span><span class="s2">], </span><span class="s0">keypoints</span><span class="s2">[:, </span><span class="s5">1</span><span class="s2">], </span><span class="s0">c</span><span class="s2">=</span><span class="s4">'red'</span><span class="s2">, </span><span class="s0">s</span><span class="s2">=</span><span class="s5">30</span><span class="s2">, </span><span class="s0">marker</span><span class="s2">=</span><span class="s4">'x'</span><span class="s2">, </span><span class="s0">linewidths</span><span class="s2">=</span><span class="s5">2</span><span class="s2">)</span>
+    <span class="s0">axes</span><span class="s2">[</span><span class="s0">i</span><span class="s2">].</span><span class="s0">set_title</span><span class="s2">(</span><span class="s4">f&quot;</span><span class="s1">{</span><span class="s0">shape_type</span><span class="s2">.</span><span class="s0">capitalize</span><span class="s2">()</span><span class="s1">} </span><span class="s4">Grayscale (</span><span class="s1">{</span><span class="s0">len</span><span class="s2">(</span><span class="s0">keypoints</span><span class="s2">)</span><span class="s1">} </span><span class="s4">keypoints)&quot;</span><span class="s2">)</span>
+    <span class="s0">axes</span><span class="s2">[</span><span class="s0">i</span><span class="s2">].</span><span class="s0">axis</span><span class="s2">(</span><span class="s4">'off'</span><span class="s2">)</span>
+
+    <span class="s0">print</span><span class="s2">(</span><span class="s4">f&quot;✓ </span><span class="s1">{</span><span class="s0">shape_type</span><span class="s1">}</span><span class="s4">: shape=</span><span class="s1">{</span><span class="s0">img</span><span class="s2">.</span><span class="s0">shape</span><span class="s1">}</span><span class="s4">, dtype=</span><span class="s1">{</span><span class="s0">img</span><span class="s2">.</span><span class="s0">dtype</span><span class="s1">}</span><span class="s4">, keypoints=</span><span class="s1">{</span><span class="s0">len</span><span class="s2">(</span><span class="s0">keypoints</span><span class="s2">)</span><span class="s1">}</span><span class="s4">&quot;</span><span class="s2">)</span>
+
+<span class="s0">plt</span><span class="s2">.</span><span class="s0">suptitle</span><span class="s2">(</span><span class="s4">&quot;Grayscale Image Generation (High Contrast)&quot;</span><span class="s2">, </span><span class="s0">fontsize</span><span class="s2">=</span><span class="s5">16</span><span class="s2">, </span><span class="s0">fontweight</span><span class="s2">=</span><span class="s4">'bold'</span><span class="s2">)</span>
+<span class="s0">plt</span><span class="s2">.</span><span class="s0">tight_layout</span><span class="s2">()</span>
+<span class="s0">plt</span><span class="s2">.</span><span class="s0">show</span><span class="s2">()</span>
+
+<span class="s0">print</span><span class="s2">()</span><hr class="ls0"><span class="s0">#%% 
+</span><span class="s3"># ============================================================</span>
+<span class="s3"># TEST 4: With Homography</span>
+<span class="s3"># ============================================================</span>
+<span class="s0">print</span><span class="s2">(</span><span class="s4">&quot;TEST 4: Grayscale with Homography Augmentation&quot;</span><span class="s2">)</span>
+<span class="s0">print</span><span class="s2">(</span><span class="s4">&quot;-&quot; </span><span class="s2">* </span><span class="s5">70</span><span class="s2">)</span>
+
+<span class="s0">fig</span><span class="s2">, </span><span class="s0">axes </span><span class="s2">= </span><span class="s0">plt</span><span class="s2">.</span><span class="s0">subplots</span><span class="s2">(</span><span class="s5">2</span><span class="s2">, </span><span class="s5">3</span><span class="s2">, </span><span class="s0">figsize</span><span class="s2">=(</span><span class="s5">15</span><span class="s2">, </span><span class="s5">10</span><span class="s2">))</span>
+<span class="s0">axes </span><span class="s2">= </span><span class="s0">axes</span><span class="s2">.</span><span class="s0">ravel</span><span class="s2">()</span>
+
+<span class="s1">for </span><span class="s0">i</span><span class="s2">, </span><span class="s0">shape_type </span><span class="s1">in </span><span class="s0">enumerate</span><span class="s2">(</span><span class="s0">shape_types</span><span class="s2">):</span>
+    <span class="s0">img</span><span class="s2">, </span><span class="s0">keypoints </span><span class="s2">= </span><span class="s0">generate_synthetic_image</span><span class="s2">(</span>
+        <span class="s5">256</span><span class="s2">, </span><span class="s5">256</span><span class="s2">,</span>
+        <span class="s0">shape_type</span><span class="s2">=</span><span class="s0">shape_type</span><span class="s2">,</span>
+        <span class="s0">use_homography</span><span class="s2">=</span><span class="s1">True</span><span class="s2">,  </span><span class="s3"># Apply homography</span>
+        <span class="s0">grayscale</span><span class="s2">=</span><span class="s1">True</span>
+    <span class="s2">)</span>
+
+    <span class="s0">axes</span><span class="s2">[</span><span class="s0">i</span><span class="s2">].</span><span class="s0">imshow</span><span class="s2">(</span><span class="s0">img</span><span class="s2">, </span><span class="s0">cmap</span><span class="s2">=</span><span class="s4">'gray'</span><span class="s2">)</span>
+    <span class="s0">axes</span><span class="s2">[</span><span class="s0">i</span><span class="s2">].</span><span class="s0">scatter</span><span class="s2">(</span><span class="s0">keypoints</span><span class="s2">[:, </span><span class="s5">0</span><span class="s2">], </span><span class="s0">keypoints</span><span class="s2">[:, </span><span class="s5">1</span><span class="s2">], </span><span class="s0">c</span><span class="s2">=</span><span class="s4">'lime'</span><span class="s2">, </span><span class="s0">s</span><span class="s2">=</span><span class="s5">30</span><span class="s2">, </span><span class="s0">marker</span><span class="s2">=</span><span class="s4">'x'</span><span class="s2">, </span><span class="s0">linewidths</span><span class="s2">=</span><span class="s5">2</span><span class="s2">)</span>
+    <span class="s0">axes</span><span class="s2">[</span><span class="s0">i</span><span class="s2">].</span><span class="s0">set_title</span><span class="s2">(</span><span class="s4">f&quot;</span><span class="s1">{</span><span class="s0">shape_type</span><span class="s2">.</span><span class="s0">capitalize</span><span class="s2">()</span><span class="s1">} </span><span class="s4">+ Homography (</span><span class="s1">{</span><span class="s0">len</span><span class="s2">(</span><span class="s0">keypoints</span><span class="s2">)</span><span class="s1">} </span><span class="s4">kpts)&quot;</span><span class="s2">)</span>
+    <span class="s0">axes</span><span class="s2">[</span><span class="s0">i</span><span class="s2">].</span><span class="s0">axis</span><span class="s2">(</span><span class="s4">'off'</span><span class="s2">)</span>
+
+    <span class="s0">print</span><span class="s2">(</span><span class="s4">f&quot;✓ </span><span class="s1">{</span><span class="s0">shape_type</span><span class="s1">}</span><span class="s4">: keypoints after homography=</span><span class="s1">{</span><span class="s0">len</span><span class="s2">(</span><span class="s0">keypoints</span><span class="s2">)</span><span class="s1">}</span><span class="s4">&quot;</span><span class="s2">)</span>
+
+<span class="s0">plt</span><span class="s2">.</span><span class="s0">suptitle</span><span class="s2">(</span><span class="s4">&quot;Grayscale with Homography Augmentation&quot;</span><span class="s2">, </span><span class="s0">fontsize</span><span class="s2">=</span><span class="s5">16</span><span class="s2">, </span><span class="s0">fontweight</span><span class="s2">=</span><span class="s4">'bold'</span><span class="s2">)</span>
+<span class="s0">plt</span><span class="s2">.</span><span class="s0">tight_layout</span><span class="s2">()</span>
+<span class="s0">plt</span><span class="s2">.</span><span class="s0">show</span><span class="s2">()</span>
+<hr class="ls0"><span class="s0">#%% 
+</span><hr class="ls0"><span class="s0">#%% 
+</span><span class="s3"># Generate and save dataset</span>
+<span class="s0">print</span><span class="s2">(</span><span class="s4">&quot;Generating dataset with raw samples...&quot;</span><span class="s2">)</span>
+<span class="s0">dataset_generator </span><span class="s2">= </span><span class="s0">KeypointDataset</span><span class="s2">(</span>
+    <span class="s0">num_samples</span><span class="s2">=</span><span class="s5">100</span><span class="s2">,</span>
+    <span class="s0">image_shape</span><span class="s2">=(</span><span class="s5">256</span><span class="s2">, </span><span class="s5">256</span><span class="s2">),</span>
+    <span class="s0">generate_fn</span><span class="s2">=</span><span class="s0">generate_synthetic_image</span><span class="s2">,</span>
+    <span class="s0">generate_kwargs</span><span class="s2">={</span><span class="s4">'width'</span><span class="s2">: </span><span class="s5">256</span><span class="s2">, </span><span class="s4">'height'</span><span class="s2">: </span><span class="s5">256</span><span class="s2">, </span><span class="s4">'shape_type'</span><span class="s2">: </span><span class="s4">'random'</span><span class="s2">, </span><span class="s4">'grayscale'</span><span class="s2">: </span><span class="s1">True</span><span class="s2">},</span>
+    <span class="s0">use_homography_augment</span><span class="s2">=</span><span class="s1">False</span><span class="s2">,</span>
+    <span class="s0">use_photometric_augment</span><span class="s2">=</span><span class="s1">False</span><span class="s2">,</span>
+    <span class="s0">use_geometric_augment</span><span class="s2">=</span><span class="s1">False</span><span class="s2">,</span>
+    <span class="s0">pregenerate</span><span class="s2">=</span><span class="s1">True</span>
+<span class="s2">)</span>
+
+<span class="s3"># Save to file</span>
+<span class="s0">dataset_generator</span><span class="s2">.</span><span class="s0">save_to_file</span><span class="s2">(</span><span class="s4">'pregenerated_samples.npz'</span><span class="s2">)</span>
+<span class="s0">print</span><span class="s2">(</span><span class="s4">&quot;Dataset saved!&quot;</span><span class="s2">)</span><hr class="ls0"><span class="s0">#%% 
+</span><span class="s3"># Load dataset from file with different augmentation settings</span>
+<span class="s0">print</span><span class="s2">(</span><span class="s4">&quot;Loading dataset without augmentation (raw samples)...&quot;</span><span class="s2">)</span>
+<span class="s0">dataset_raw </span><span class="s2">= </span><span class="s0">KeypointDataset</span><span class="s2">(</span>
+    <span class="s0">num_samples</span><span class="s2">=</span><span class="s5">100</span><span class="s2">,</span>
+    <span class="s0">image_shape</span><span class="s2">=(</span><span class="s5">256</span><span class="s2">, </span><span class="s5">256</span><span class="s2">),</span>
+    <span class="s0">use_homography_augment</span><span class="s2">=</span><span class="s1">False</span><span class="s2">,</span>
+    <span class="s0">use_photometric_augment</span><span class="s2">=</span><span class="s1">False</span><span class="s2">,</span>
+    <span class="s0">use_geometric_augment</span><span class="s2">=</span><span class="s1">False</span><span class="s2">,</span>
+    <span class="s0">pregenerate</span><span class="s2">=</span><span class="s1">False</span><span class="s2">,</span>
+    <span class="s0">load_from_file</span><span class="s2">=</span><span class="s4">'pregenerated_samples.npz'</span>
+<span class="s2">)</span>
+
+<span class="s0">print</span><span class="s2">(</span><span class="s4">&quot;</span><span class="s1">\n</span><span class="s4">Loading dataset with augmentation (from same file)...&quot;</span><span class="s2">)</span>
+<span class="s0">dataset_augmented </span><span class="s2">= </span><span class="s0">KeypointDataset</span><span class="s2">(</span>
+    <span class="s0">num_samples</span><span class="s2">=</span><span class="s5">100</span><span class="s2">,</span>
+    <span class="s0">image_shape</span><span class="s2">=(</span><span class="s5">256</span><span class="s2">, </span><span class="s5">256</span><span class="s2">),</span>
+    <span class="s0">use_homography_augment</span><span class="s2">=</span><span class="s1">True</span><span class="s2">,</span>
+    <span class="s0">use_photometric_augment</span><span class="s2">=</span><span class="s1">True</span><span class="s2">,</span>
+    <span class="s0">use_geometric_augment</span><span class="s2">=</span><span class="s1">True</span><span class="s2">,</span>
+    <span class="s0">pregenerate</span><span class="s2">=</span><span class="s1">False</span><span class="s2">,</span>
+    <span class="s0">load_from_file</span><span class="s2">=</span><span class="s4">'pregenerated_samples.npz'</span>
+<span class="s2">)</span>
+
+<span class="s0">print</span><span class="s2">(</span><span class="s4">&quot;</span><span class="s1">\n</span><span class="s4">Loading dataset with fresh random generation + augmentation...&quot;</span><span class="s2">)</span>
+<span class="s0">dataset_fresh </span><span class="s2">= </span><span class="s0">KeypointDataset</span><span class="s2">(</span>
+    <span class="s0">num_samples</span><span class="s2">=</span><span class="s5">100</span><span class="s2">,</span>
+    <span class="s0">image_shape</span><span class="s2">=(</span><span class="s5">256</span><span class="s2">, </span><span class="s5">256</span><span class="s2">),</span>
+    <span class="s0">use_homography_augment</span><span class="s2">=</span><span class="s1">True</span><span class="s2">,</span>
+    <span class="s0">use_photometric_augment</span><span class="s2">=</span><span class="s1">True</span><span class="s2">,</span>
+    <span class="s0">use_geometric_augment</span><span class="s2">=</span><span class="s1">True</span><span class="s2">,</span>
+    <span class="s0">pregenerate</span><span class="s2">=</span><span class="s1">False</span><span class="s2">,</span>
+    <span class="s0">generate_fn</span><span class="s2">=</span><span class="s0">generate_synthetic_image</span><span class="s2">,</span>
+    <span class="s0">generate_kwargs</span><span class="s2">={</span>
+        <span class="s4">'width'</span><span class="s2">: </span><span class="s5">256</span><span class="s2">,</span>
+        <span class="s4">'height'</span><span class="s2">: </span><span class="s5">256</span><span class="s2">,</span>
+        <span class="s4">'shape_type'</span><span class="s2">: </span><span class="s4">'random'</span><span class="s2">,</span>
+        <span class="s4">'grayscale'</span><span class="s2">: </span><span class="s1">True</span><span class="s2">,</span>
+    <span class="s2">}</span>
+<span class="s2">)</span>
+
+<span class="s0">print</span><span class="s2">(</span><span class="s4">&quot;</span><span class="s1">\n</span><span class="s4">All datasets loaded!&quot;</span><span class="s2">)</span><hr class="ls0"><span class="s0">#%% 
+</span><span class="s3"># Select 4 random sample indices</span>
+<span class="s0">num_samples_to_show </span><span class="s2">= </span><span class="s5">4</span>
+<span class="s0">random_indices </span><span class="s2">= </span><span class="s0">random</span><span class="s2">.</span><span class="s0">sample</span><span class="s2">(</span><span class="s0">range</span><span class="s2">(</span><span class="s0">len</span><span class="s2">(</span><span class="s0">dataset_raw</span><span class="s2">.</span><span class="s0">pregenerated_data</span><span class="s2">)), </span><span class="s0">num_samples_to_show</span><span class="s2">)</span>
+
+<span class="s3"># Create 3-row plot: raw, augmented from file, fresh random</span>
+<span class="s0">fig</span><span class="s2">, </span><span class="s0">axes </span><span class="s2">= </span><span class="s0">plt</span><span class="s2">.</span><span class="s0">subplots</span><span class="s2">(</span><span class="s5">3</span><span class="s2">, </span><span class="s0">num_samples_to_show</span><span class="s2">, </span><span class="s0">figsize</span><span class="s2">=(</span><span class="s5">16</span><span class="s2">, </span><span class="s5">12</span><span class="s2">))</span>
+
+<span class="s1">for </span><span class="s0">col</span><span class="s2">, </span><span class="s0">idx </span><span class="s1">in </span><span class="s0">enumerate</span><span class="s2">(</span><span class="s0">random_indices</span><span class="s2">):</span>
+    <span class="s3"># Row 1: Raw sample (no augmentation)</span>
+    <span class="s0">img_raw</span><span class="s2">, </span><span class="s0">target_raw </span><span class="s2">= </span><span class="s0">dataset_raw</span><span class="s2">[</span><span class="s0">idx</span><span class="s2">]</span>
+    <span class="s0">img_raw_np </span><span class="s2">= </span><span class="s0">img_raw</span><span class="s2">.</span><span class="s0">squeeze</span><span class="s2">().</span><span class="s0">numpy</span><span class="s2">()</span>
+    <span class="s0">raw_kpts </span><span class="s2">= </span><span class="s0">extract_keypoints_from_target</span><span class="s2">(</span><span class="s0">target_raw</span><span class="s2">)</span>
+
+    <span class="s0">axes</span><span class="s2">[</span><span class="s5">0</span><span class="s2">, </span><span class="s0">col</span><span class="s2">].</span><span class="s0">imshow</span><span class="s2">(</span><span class="s0">img_raw_np</span><span class="s2">, </span><span class="s0">cmap</span><span class="s2">=</span><span class="s4">'gray'</span><span class="s2">, </span><span class="s0">vmin</span><span class="s2">=</span><span class="s5">0</span><span class="s2">, </span><span class="s0">vmax</span><span class="s2">=</span><span class="s5">1</span><span class="s2">)</span>
+    <span class="s1">if </span><span class="s0">len</span><span class="s2">(</span><span class="s0">raw_kpts</span><span class="s2">) &gt; </span><span class="s5">0</span><span class="s2">:</span>
+        <span class="s0">axes</span><span class="s2">[</span><span class="s5">0</span><span class="s2">, </span><span class="s0">col</span><span class="s2">].</span><span class="s0">scatter</span><span class="s2">(</span><span class="s0">raw_kpts</span><span class="s2">[:, </span><span class="s5">0</span><span class="s2">], </span><span class="s0">raw_kpts</span><span class="s2">[:, </span><span class="s5">1</span><span class="s2">], </span><span class="s0">c</span><span class="s2">=</span><span class="s4">'red'</span><span class="s2">, </span><span class="s0">s</span><span class="s2">=</span><span class="s5">50</span><span class="s2">, </span><span class="s0">marker</span><span class="s2">=</span><span class="s4">'x'</span><span class="s2">, </span><span class="s0">linewidths</span><span class="s2">=</span><span class="s5">2</span><span class="s2">)</span>
+    <span class="s0">axes</span><span class="s2">[</span><span class="s5">0</span><span class="s2">, </span><span class="s0">col</span><span class="s2">].</span><span class="s0">set_title</span><span class="s2">(</span><span class="s4">f'Raw #</span><span class="s1">{</span><span class="s0">idx</span><span class="s1">}\n</span><span class="s4">(</span><span class="s1">{</span><span class="s0">len</span><span class="s2">(</span><span class="s0">raw_kpts</span><span class="s2">)</span><span class="s1">} </span><span class="s4">kpts)'</span><span class="s2">, </span><span class="s0">fontsize</span><span class="s2">=</span><span class="s5">10</span><span class="s2">)</span>
+    <span class="s0">axes</span><span class="s2">[</span><span class="s5">0</span><span class="s2">, </span><span class="s0">col</span><span class="s2">].</span><span class="s0">axis</span><span class="s2">(</span><span class="s4">'off'</span><span class="s2">)</span>
+
+    <span class="s3"># Row 2: Augmented sample (same base image from file)</span>
+    <span class="s0">img_aug</span><span class="s2">, </span><span class="s0">target_aug </span><span class="s2">= </span><span class="s0">dataset_augmented</span><span class="s2">[</span><span class="s0">idx</span><span class="s2">]</span>
+    <span class="s0">img_aug_np </span><span class="s2">= </span><span class="s0">img_aug</span><span class="s2">.</span><span class="s0">squeeze</span><span class="s2">().</span><span class="s0">numpy</span><span class="s2">()</span>
+    <span class="s0">aug_kpts </span><span class="s2">= </span><span class="s0">extract_keypoints_from_target</span><span class="s2">(</span><span class="s0">target_aug</span><span class="s2">)</span>
+
+    <span class="s0">axes</span><span class="s2">[</span><span class="s5">1</span><span class="s2">, </span><span class="s0">col</span><span class="s2">].</span><span class="s0">imshow</span><span class="s2">(</span><span class="s0">img_aug_np</span><span class="s2">, </span><span class="s0">cmap</span><span class="s2">=</span><span class="s4">'gray'</span><span class="s2">, </span><span class="s0">vmin</span><span class="s2">=</span><span class="s5">0</span><span class="s2">, </span><span class="s0">vmax</span><span class="s2">=</span><span class="s5">1</span><span class="s2">)</span>
+    <span class="s1">if </span><span class="s0">len</span><span class="s2">(</span><span class="s0">aug_kpts</span><span class="s2">) &gt; </span><span class="s5">0</span><span class="s2">:</span>
+        <span class="s0">axes</span><span class="s2">[</span><span class="s5">1</span><span class="s2">, </span><span class="s0">col</span><span class="s2">].</span><span class="s0">scatter</span><span class="s2">(</span><span class="s0">aug_kpts</span><span class="s2">[:, </span><span class="s5">0</span><span class="s2">], </span><span class="s0">aug_kpts</span><span class="s2">[:, </span><span class="s5">1</span><span class="s2">], </span><span class="s0">c</span><span class="s2">=</span><span class="s4">'red'</span><span class="s2">, </span><span class="s0">s</span><span class="s2">=</span><span class="s5">50</span><span class="s2">, </span><span class="s0">marker</span><span class="s2">=</span><span class="s4">'x'</span><span class="s2">, </span><span class="s0">linewidths</span><span class="s2">=</span><span class="s5">2</span><span class="s2">)</span>
+    <span class="s0">axes</span><span class="s2">[</span><span class="s5">1</span><span class="s2">, </span><span class="s0">col</span><span class="s2">].</span><span class="s0">set_title</span><span class="s2">(</span><span class="s4">f'Augmented #</span><span class="s1">{</span><span class="s0">idx</span><span class="s1">}\n</span><span class="s4">(</span><span class="s1">{</span><span class="s0">len</span><span class="s2">(</span><span class="s0">aug_kpts</span><span class="s2">)</span><span class="s1">} </span><span class="s4">kpts)'</span><span class="s2">, </span><span class="s0">fontsize</span><span class="s2">=</span><span class="s5">10</span><span class="s2">)</span>
+    <span class="s0">axes</span><span class="s2">[</span><span class="s5">1</span><span class="s2">, </span><span class="s0">col</span><span class="s2">].</span><span class="s0">axis</span><span class="s2">(</span><span class="s4">'off'</span><span class="s2">)</span>
+
+    <span class="s3"># Row 3: Fresh random generation (completely new image)</span>
+    <span class="s0">img_fresh</span><span class="s2">, </span><span class="s0">target_fresh </span><span class="s2">= </span><span class="s0">dataset_fresh</span><span class="s2">[</span><span class="s0">idx</span><span class="s2">]</span>
+    <span class="s0">img_fresh_np </span><span class="s2">= </span><span class="s0">img_fresh</span><span class="s2">.</span><span class="s0">squeeze</span><span class="s2">().</span><span class="s0">numpy</span><span class="s2">()</span>
+    <span class="s0">fresh_kpts </span><span class="s2">= </span><span class="s0">extract_keypoints_from_target</span><span class="s2">(</span><span class="s0">target_fresh</span><span class="s2">)</span>
+
+    <span class="s0">axes</span><span class="s2">[</span><span class="s5">2</span><span class="s2">, </span><span class="s0">col</span><span class="s2">].</span><span class="s0">imshow</span><span class="s2">(</span><span class="s0">img_fresh_np</span><span class="s2">, </span><span class="s0">cmap</span><span class="s2">=</span><span class="s4">'gray'</span><span class="s2">, </span><span class="s0">vmin</span><span class="s2">=</span><span class="s5">0</span><span class="s2">, </span><span class="s0">vmax</span><span class="s2">=</span><span class="s5">1</span><span class="s2">)</span>
+    <span class="s1">if </span><span class="s0">len</span><span class="s2">(</span><span class="s0">fresh_kpts</span><span class="s2">) &gt; </span><span class="s5">0</span><span class="s2">:</span>
+        <span class="s0">axes</span><span class="s2">[</span><span class="s5">2</span><span class="s2">, </span><span class="s0">col</span><span class="s2">].</span><span class="s0">scatter</span><span class="s2">(</span><span class="s0">fresh_kpts</span><span class="s2">[:, </span><span class="s5">0</span><span class="s2">], </span><span class="s0">fresh_kpts</span><span class="s2">[:, </span><span class="s5">1</span><span class="s2">], </span><span class="s0">c</span><span class="s2">=</span><span class="s4">'red'</span><span class="s2">, </span><span class="s0">s</span><span class="s2">=</span><span class="s5">50</span><span class="s2">, </span><span class="s0">marker</span><span class="s2">=</span><span class="s4">'x'</span><span class="s2">, </span><span class="s0">linewidths</span><span class="s2">=</span><span class="s5">2</span><span class="s2">)</span>
+    <span class="s0">axes</span><span class="s2">[</span><span class="s5">2</span><span class="s2">, </span><span class="s0">col</span><span class="s2">].</span><span class="s0">set_title</span><span class="s2">(</span><span class="s4">f'Fresh Random #</span><span class="s1">{</span><span class="s0">idx</span><span class="s1">}\n</span><span class="s4">(</span><span class="s1">{</span><span class="s0">len</span><span class="s2">(</span><span class="s0">fresh_kpts</span><span class="s2">)</span><span class="s1">} </span><span class="s4">kpts)'</span><span class="s2">, </span><span class="s0">fontsize</span><span class="s2">=</span><span class="s5">10</span><span class="s2">)</span>
+    <span class="s0">axes</span><span class="s2">[</span><span class="s5">2</span><span class="s2">, </span><span class="s0">col</span><span class="s2">].</span><span class="s0">axis</span><span class="s2">(</span><span class="s4">'off'</span><span class="s2">)</span>
+
+<span class="s3"># Row labels</span>
+<span class="s0">axes</span><span class="s2">[</span><span class="s5">0</span><span class="s2">, </span><span class="s5">0</span><span class="s2">].</span><span class="s0">set_ylabel</span><span class="s2">(</span><span class="s4">'Raw</span><span class="s1">\n</span><span class="s4">(No Augmentation)'</span><span class="s2">, </span><span class="s0">fontsize</span><span class="s2">=</span><span class="s5">12</span><span class="s2">, </span><span class="s0">fontweight</span><span class="s2">=</span><span class="s4">'bold'</span><span class="s2">)</span>
+<span class="s0">axes</span><span class="s2">[</span><span class="s5">1</span><span class="s2">, </span><span class="s5">0</span><span class="s2">].</span><span class="s0">set_ylabel</span><span class="s2">(</span><span class="s4">'Augmented</span><span class="s1">\n</span><span class="s4">(From File)'</span><span class="s2">, </span><span class="s0">fontsize</span><span class="s2">=</span><span class="s5">12</span><span class="s2">, </span><span class="s0">fontweight</span><span class="s2">=</span><span class="s4">'bold'</span><span class="s2">)</span>
+<span class="s0">axes</span><span class="s2">[</span><span class="s5">2</span><span class="s2">, </span><span class="s5">0</span><span class="s2">].</span><span class="s0">set_ylabel</span><span class="s2">(</span><span class="s4">'Fresh Random</span><span class="s1">\n</span><span class="s4">(Generated)'</span><span class="s2">, </span><span class="s0">fontsize</span><span class="s2">=</span><span class="s5">12</span><span class="s2">, </span><span class="s0">fontweight</span><span class="s2">=</span><span class="s4">'bold'</span><span class="s2">)</span>
+
+<span class="s0">plt</span><span class="s2">.</span><span class="s0">tight_layout</span><span class="s2">()</span>
+<span class="s0">plt</span><span class="s2">.</span><span class="s0">show</span><span class="s2">()</span><hr class="ls0"><span class="s0">#%% 
+</span><span class="s1">import </span><span class="s0">torch</span>
+<span class="s1">from </span><span class="s0">Helper </span><span class="s1">import </span><span class="s0">load_checkpoint_generic</span>
+<span class="s1">from </span><span class="s0">Models </span><span class="s1">import </span><span class="s0">KeypointNet</span><span class="s2">, </span><span class="s0">process_output_torch</span><span class="s2">, </span><span class="s0">detect_local_maxima</span><hr class="ls0"><span class="s0">#%% 
+</span><span class="s3"># ============================================================</span>
+<span class="s3"># Quick Model Test - On-the-fly Generation</span>
+<span class="s3"># ============================================================</span>
+
+<span class="s3"># Configuration</span>
+<span class="s0">num_samples </span><span class="s2">= </span><span class="s5">3</span>
+<span class="s0">image_size </span><span class="s2">= (</span><span class="s5">240</span><span class="s2">, </span><span class="s5">320</span><span class="s2">)</span>
+<span class="s0">checkpoint_dir </span><span class="s2">= </span><span class="s4">'./checkpoints'</span>
+
+<span class="s3"># Initialize model</span>
+<span class="s0">device </span><span class="s2">= </span><span class="s0">torch</span><span class="s2">.</span><span class="s0">device</span><span class="s2">(</span><span class="s4">'cuda' </span><span class="s1">if </span><span class="s0">torch</span><span class="s2">.</span><span class="s0">cuda</span><span class="s2">.</span><span class="s0">is_available</span><span class="s2">() </span><span class="s1">else </span><span class="s4">'cpu'</span><span class="s2">)</span>
+<span class="s0">model </span><span class="s2">= </span><span class="s0">KeypointNet</span><span class="s2">().</span><span class="s0">to</span><span class="s2">(</span><span class="s0">device</span><span class="s2">)</span>
+
+<span class="s3"># Load checkpoint</span>
+<span class="s0">checkpoint </span><span class="s2">= </span><span class="s0">load_checkpoint_generic</span><span class="s2">(</span><span class="s0">checkpoint_dir</span><span class="s2">, </span><span class="s0">device</span><span class="s2">)</span>
+<span class="s1">if </span><span class="s0">checkpoint</span><span class="s2">:</span>
+    <span class="s0">model</span><span class="s2">.</span><span class="s0">load_state_dict</span><span class="s2">(</span><span class="s0">checkpoint</span><span class="s2">[</span><span class="s4">'model_state_dict'</span><span class="s2">])</span>
+    <span class="s0">print</span><span class="s2">(</span><span class="s4">f&quot;✓ Loaded checkpoint (iteration </span><span class="s1">{</span><span class="s0">checkpoint</span><span class="s2">.</span><span class="s0">get</span><span class="s2">(</span><span class="s4">'iteration'</span><span class="s2">, </span><span class="s4">'unknown'</span><span class="s2">)</span><span class="s1">:</span><span class="s4">,</span><span class="s1">}</span><span class="s4">)&quot;</span><span class="s2">)</span>
+<span class="s1">else</span><span class="s2">:</span>
+    <span class="s0">print</span><span class="s2">(</span><span class="s4">&quot;⚠️  No checkpoint found!&quot;</span><span class="s2">)</span>
+
+<span class="s0">model</span><span class="s2">.</span><span class="s0">eval</span><span class="s2">()</span>
+
+<span class="s3"># Generate and visualize samples</span>
+<span class="s0">fig</span><span class="s2">, </span><span class="s0">axes </span><span class="s2">= </span><span class="s0">plt</span><span class="s2">.</span><span class="s0">subplots</span><span class="s2">(</span><span class="s0">num_samples</span><span class="s2">, </span><span class="s5">3</span><span class="s2">, </span><span class="s0">figsize</span><span class="s2">=(</span><span class="s5">12</span><span class="s2">, </span><span class="s5">4 </span><span class="s2">* </span><span class="s0">num_samples</span><span class="s2">))</span>
+<span class="s1">if </span><span class="s0">num_samples </span><span class="s2">== </span><span class="s5">1</span><span class="s2">:</span>
+    <span class="s0">axes </span><span class="s2">= </span><span class="s0">axes</span><span class="s2">.</span><span class="s0">reshape</span><span class="s2">(</span><span class="s5">1</span><span class="s2">, -</span><span class="s5">1</span><span class="s2">)</span>
+
+<span class="s1">with </span><span class="s0">torch</span><span class="s2">.</span><span class="s0">no_grad</span><span class="s2">():</span>
+    <span class="s1">for </span><span class="s0">i </span><span class="s1">in </span><span class="s0">range</span><span class="s2">(</span><span class="s0">num_samples</span><span class="s2">):</span>
+        <span class="s3"># Generate fresh sample on-the-fly</span>
+        <span class="s0">img</span><span class="s2">, </span><span class="s0">keypoints </span><span class="s2">= </span><span class="s0">generate_synthetic_image</span><span class="s2">(</span>
+            <span class="s0">width</span><span class="s2">=</span><span class="s0">image_size</span><span class="s2">[</span><span class="s5">1</span><span class="s2">],</span>
+            <span class="s0">height</span><span class="s2">=</span><span class="s0">image_size</span><span class="s2">[</span><span class="s5">0</span><span class="s2">],</span>
+            <span class="s0">grayscale</span><span class="s2">=</span><span class="s1">True</span><span class="s2">,</span>
+            <span class="s0">use_homography</span><span class="s2">=</span><span class="s1">False</span>
+        <span class="s2">)</span>
+
+        <span class="s3"># Normalize and prepare for model</span>
+        <span class="s0">img_normalized </span><span class="s2">= </span><span class="s0">img</span><span class="s2">.</span><span class="s0">astype</span><span class="s2">(</span><span class="s0">np</span><span class="s2">.</span><span class="s0">float32</span><span class="s2">) / </span><span class="s5">255.0</span>
+        <span class="s0">image_tensor </span><span class="s2">= </span><span class="s0">torch</span><span class="s2">.</span><span class="s0">from_numpy</span><span class="s2">(</span><span class="s0">img_normalized</span><span class="s2">[</span><span class="s0">np</span><span class="s2">.</span><span class="s0">newaxis</span><span class="s2">, </span><span class="s0">np</span><span class="s2">.</span><span class="s0">newaxis</span><span class="s2">, :, :]).</span><span class="s0">to</span><span class="s2">(</span><span class="s0">device</span><span class="s2">)</span>
+
+        <span class="s3"># Get prediction</span>
+        <span class="s0">logits </span><span class="s2">= </span><span class="s0">model</span><span class="s2">(</span><span class="s0">image_tensor</span><span class="s2">, </span><span class="s0">return_logits</span><span class="s2">=</span><span class="s1">True</span><span class="s2">)</span>
+        <span class="s0">heatmap </span><span class="s2">= </span><span class="s0">model</span><span class="s2">(</span><span class="s0">image_tensor</span><span class="s2">, </span><span class="s0">return_logits</span><span class="s2">=</span><span class="s1">False</span><span class="s2">)</span>
+
+        <span class="s3"># Extract predicted keypoints</span>
+        <span class="s0">heatmap_np </span><span class="s2">= </span><span class="s0">heatmap</span><span class="s2">.</span><span class="s0">squeeze</span><span class="s2">().</span><span class="s0">cpu</span><span class="s2">().</span><span class="s0">numpy</span><span class="s2">()</span>
+        <span class="s0">pred_kpts </span><span class="s2">= </span><span class="s0">detect_local_maxima</span><span class="s2">(</span><span class="s0">heatmap_np</span><span class="s2">, </span><span class="s0">threshold</span><span class="s2">=</span><span class="s5">0.01</span><span class="s2">)</span>
+
+        <span class="s3"># Plot 1: Ground truth</span>
+        <span class="s0">axes</span><span class="s2">[</span><span class="s0">i</span><span class="s2">, </span><span class="s5">0</span><span class="s2">].</span><span class="s0">imshow</span><span class="s2">(</span><span class="s0">img</span><span class="s2">, </span><span class="s0">cmap</span><span class="s2">=</span><span class="s4">'gray'</span><span class="s2">)</span>
+        <span class="s0">axes</span><span class="s2">[</span><span class="s0">i</span><span class="s2">, </span><span class="s5">0</span><span class="s2">].</span><span class="s0">scatter</span><span class="s2">(</span><span class="s0">keypoints</span><span class="s2">[:, </span><span class="s5">0</span><span class="s2">], </span><span class="s0">keypoints</span><span class="s2">[:, </span><span class="s5">1</span><span class="s2">],</span>
+                          <span class="s0">c</span><span class="s2">=</span><span class="s4">'lime'</span><span class="s2">, </span><span class="s0">s</span><span class="s2">=</span><span class="s5">50</span><span class="s2">, </span><span class="s0">marker</span><span class="s2">=</span><span class="s4">'x'</span><span class="s2">, </span><span class="s0">linewidths</span><span class="s2">=</span><span class="s5">2</span><span class="s2">)</span>
+        <span class="s0">axes</span><span class="s2">[</span><span class="s0">i</span><span class="s2">, </span><span class="s5">0</span><span class="s2">].</span><span class="s0">set_title</span><span class="s2">(</span><span class="s4">f'Ground Truth (</span><span class="s1">{</span><span class="s0">len</span><span class="s2">(</span><span class="s0">keypoints</span><span class="s2">)</span><span class="s1">} </span><span class="s4">points)'</span><span class="s2">)</span>
+        <span class="s0">axes</span><span class="s2">[</span><span class="s0">i</span><span class="s2">, </span><span class="s5">0</span><span class="s2">].</span><span class="s0">axis</span><span class="s2">(</span><span class="s4">'off'</span><span class="s2">)</span>
+
+        <span class="s3"># Plot 2: Heatmap</span>
+        <span class="s0">axes</span><span class="s2">[</span><span class="s0">i</span><span class="s2">, </span><span class="s5">1</span><span class="s2">].</span><span class="s0">imshow</span><span class="s2">(</span><span class="s0">img</span><span class="s2">, </span><span class="s0">cmap</span><span class="s2">=</span><span class="s4">'gray'</span><span class="s2">)</span>
+        <span class="s0">axes</span><span class="s2">[</span><span class="s0">i</span><span class="s2">, </span><span class="s5">1</span><span class="s2">].</span><span class="s0">imshow</span><span class="s2">(</span><span class="s0">heatmap_np</span><span class="s2">, </span><span class="s0">cmap</span><span class="s2">=</span><span class="s4">'jet'</span><span class="s2">, </span><span class="s0">alpha</span><span class="s2">=</span><span class="s5">0.5</span><span class="s2">)</span>
+        <span class="s0">axes</span><span class="s2">[</span><span class="s0">i</span><span class="s2">, </span><span class="s5">1</span><span class="s2">].</span><span class="s0">set_title</span><span class="s2">(</span><span class="s4">'Prediction Heatmap'</span><span class="s2">)</span>
+        <span class="s0">axes</span><span class="s2">[</span><span class="s0">i</span><span class="s2">, </span><span class="s5">1</span><span class="s2">].</span><span class="s0">axis</span><span class="s2">(</span><span class="s4">'off'</span><span class="s2">)</span>
+
+        <span class="s3"># Plot 3: Detected keypoints</span>
+        <span class="s0">axes</span><span class="s2">[</span><span class="s0">i</span><span class="s2">, </span><span class="s5">2</span><span class="s2">].</span><span class="s0">imshow</span><span class="s2">(</span><span class="s0">img</span><span class="s2">, </span><span class="s0">cmap</span><span class="s2">=</span><span class="s4">'gray'</span><span class="s2">)</span>
+        <span class="s1">if </span><span class="s0">len</span><span class="s2">(</span><span class="s0">pred_kpts</span><span class="s2">) &gt; </span><span class="s5">0</span><span class="s2">:</span>
+            <span class="s0">axes</span><span class="s2">[</span><span class="s0">i</span><span class="s2">, </span><span class="s5">2</span><span class="s2">].</span><span class="s0">scatter</span><span class="s2">(</span><span class="s0">pred_kpts</span><span class="s2">[:, </span><span class="s5">0</span><span class="s2">], </span><span class="s0">pred_kpts</span><span class="s2">[:, </span><span class="s5">1</span><span class="s2">],</span>
+                              <span class="s0">c</span><span class="s2">=</span><span class="s4">'red'</span><span class="s2">, </span><span class="s0">s</span><span class="s2">=</span><span class="s5">50</span><span class="s2">, </span><span class="s0">marker</span><span class="s2">=</span><span class="s4">'+'</span><span class="s2">, </span><span class="s0">linewidths</span><span class="s2">=</span><span class="s5">2</span><span class="s2">)</span>
+        <span class="s0">axes</span><span class="s2">[</span><span class="s0">i</span><span class="s2">, </span><span class="s5">2</span><span class="s2">].</span><span class="s0">set_title</span><span class="s2">(</span><span class="s4">f'Detected (</span><span class="s1">{</span><span class="s0">len</span><span class="s2">(</span><span class="s0">pred_kpts</span><span class="s2">)</span><span class="s1">} </span><span class="s4">points)'</span><span class="s2">)</span>
+        <span class="s0">axes</span><span class="s2">[</span><span class="s0">i</span><span class="s2">, </span><span class="s5">2</span><span class="s2">].</span><span class="s0">axis</span><span class="s2">(</span><span class="s4">'off'</span><span class="s2">)</span>
+
+<span class="s0">plt</span><span class="s2">.</span><span class="s0">tight_layout</span><span class="s2">()</span>
+<span class="s0">plt</span><span class="s2">.</span><span class="s0">show</span><span class="s2">()</span>
+<span class="s0">print</span><span class="s2">(</span><span class="s4">f&quot;✓ Displayed </span><span class="s1">{</span><span class="s0">num_samples</span><span class="s1">} </span><span class="s4">samples&quot;</span><span class="s2">)</span><hr class="ls0"><span class="s0">#%% 
+</span><span class="s1">from </span><span class="s0">Models </span><span class="s1">import </span><span class="s0">homography_adaptation</span>
+
+<span class="s3"># Load your trained model</span>
+<span class="s3"># Test configuration</span>
+<span class="s0">test_checkpoint_dir </span><span class="s2">= </span><span class="s4">'./checkpoints'  </span><span class="s3"># Path to checkpoint directory</span>
+
+<span class="s3"># Initialize model</span>
+<span class="s0">print</span><span class="s2">(</span><span class="s4">&quot;Initializing model...&quot;</span><span class="s2">)</span>
+<span class="s0">device </span><span class="s2">= </span><span class="s0">torch</span><span class="s2">.</span><span class="s0">device</span><span class="s2">(</span><span class="s4">'cuda' </span><span class="s1">if </span><span class="s0">torch</span><span class="s2">.</span><span class="s0">cuda</span><span class="s2">.</span><span class="s0">is_available</span><span class="s2">() </span><span class="s1">else </span><span class="s4">'cpu'</span><span class="s2">)</span>
+<span class="s0">model </span><span class="s2">= </span><span class="s0">KeypointNet</span><span class="s2">().</span><span class="s0">to</span><span class="s2">(</span><span class="s0">device</span><span class="s2">)</span>
+
+<span class="s3"># Load latest checkpoint</span>
+<span class="s0">checkpoint </span><span class="s2">= </span><span class="s0">load_checkpoint_generic</span><span class="s2">(</span><span class="s0">test_checkpoint_dir</span><span class="s2">, </span><span class="s0">device</span><span class="s2">)</span>
+<span class="s1">if </span><span class="s0">checkpoint</span><span class="s2">:</span>
+    <span class="s0">model</span><span class="s2">.</span><span class="s0">load_state_dict</span><span class="s2">(</span><span class="s0">checkpoint</span><span class="s2">[</span><span class="s4">'model_state_dict'</span><span class="s2">])</span>
+    <span class="s0">iteration </span><span class="s2">= </span><span class="s0">checkpoint</span><span class="s2">.</span><span class="s0">get</span><span class="s2">(</span><span class="s4">'iteration'</span><span class="s2">, </span><span class="s4">'unknown'</span><span class="s2">)</span>
+    <span class="s0">print</span><span class="s2">(</span><span class="s4">f&quot;✓ Loaded checkpoint from iteration </span><span class="s1">{</span><span class="s0">iteration</span><span class="s1">:</span><span class="s4">,</span><span class="s1">}</span><span class="s4">&quot;</span><span class="s2">)</span>
+<span class="s1">else</span><span class="s2">:</span>
+    <span class="s0">print</span><span class="s2">(</span><span class="s4">&quot;⚠️  No checkpoint found! Using untrained model.&quot;</span><span class="s2">)</span>
+
+<span class="s0">print</span><span class="s2">()</span>
+
+<span class="s0">model</span><span class="s2">.</span><span class="s0">eval</span><span class="s2">()</span>
+
+<span class="s3"># Load test image</span>
+<span class="s0">img</span><span class="s2">, </span><span class="s0">true_kpts </span><span class="s2">= </span><span class="s0">generate_synthetic_image</span><span class="s2">(</span><span class="s5">320</span><span class="s2">, </span><span class="s5">240</span><span class="s2">, </span><span class="s0">grayscale</span><span class="s2">=</span><span class="s1">True</span><span class="s2">, </span><span class="s0">use_homography</span><span class="s2">=</span><span class="s1">True</span><span class="s2">)</span>
+<span class="s0">img_normalized </span><span class="s2">= </span><span class="s0">img</span><span class="s2">.</span><span class="s0">astype</span><span class="s2">(</span><span class="s0">np</span><span class="s2">.</span><span class="s0">float32</span><span class="s2">) / </span><span class="s5">255.0</span>
+<span class="s0">img_tensor </span><span class="s2">= </span><span class="s0">torch</span><span class="s2">.</span><span class="s0">from_numpy</span><span class="s2">(</span><span class="s0">img_normalized</span><span class="s2">[</span><span class="s0">np</span><span class="s2">.</span><span class="s0">newaxis</span><span class="s2">, </span><span class="s0">np</span><span class="s2">.</span><span class="s0">newaxis</span><span class="s2">, :, :]).</span><span class="s0">float</span><span class="s2">().</span><span class="s0">to</span><span class="s2">(</span><span class="s4">'cuda'</span><span class="s2">)</span>
+
+<span class="s3"># Apply homography adaptation</span>
+<span class="s0">print</span><span class="s2">(</span><span class="s4">&quot;Running homography adaptation...&quot;</span><span class="s2">)</span>
+<span class="s0">averaged_heatmap</span><span class="s2">, </span><span class="s0">detected_kpts </span><span class="s2">= </span><span class="s0">homography_adaptation</span><span class="s2">(</span>
+    <span class="s0">model</span><span class="s2">,</span>
+    <span class="s0">img_tensor</span><span class="s2">,</span>
+    <span class="s0">num_iter</span><span class="s2">=</span><span class="s5">99</span><span class="s2">,</span>
+    <span class="s0">threshold</span><span class="s2">=</span><span class="s5">0.075</span>
+<span class="s2">)</span>
+
+<span class="s0">print</span><span class="s2">(</span><span class="s4">f&quot;Detected </span><span class="s1">{</span><span class="s0">len</span><span class="s2">(</span><span class="s0">detected_kpts</span><span class="s2">)</span><span class="s1">} </span><span class="s4">keypoints&quot;</span><span class="s2">)</span>
+
+<span class="s3"># Visualize results</span>
+<span class="s1">import </span><span class="s0">matplotlib</span><span class="s2">.</span><span class="s0">pyplot </span><span class="s1">as </span><span class="s0">plt</span>
+
+<span class="s0">plt</span><span class="s2">.</span><span class="s0">figure</span><span class="s2">(</span><span class="s0">figsize</span><span class="s2">=(</span><span class="s5">12</span><span class="s2">, </span><span class="s5">4</span><span class="s2">))</span>
+
+<span class="s0">plt</span><span class="s2">.</span><span class="s0">subplot</span><span class="s2">(</span><span class="s5">1</span><span class="s2">, </span><span class="s5">3</span><span class="s2">, </span><span class="s5">1</span><span class="s2">)</span>
+<span class="s0">plt</span><span class="s2">.</span><span class="s0">imshow</span><span class="s2">(</span><span class="s0">img</span><span class="s2">, </span><span class="s0">cmap</span><span class="s2">=</span><span class="s4">'gray'</span><span class="s2">)</span>
+<span class="s0">plt</span><span class="s2">.</span><span class="s0">scatter</span><span class="s2">(</span><span class="s0">true_kpts</span><span class="s2">[:, </span><span class="s5">0</span><span class="s2">], </span><span class="s0">true_kpts</span><span class="s2">[:, </span><span class="s5">1</span><span class="s2">], </span><span class="s0">c</span><span class="s2">=</span><span class="s4">'red'</span><span class="s2">, </span><span class="s0">s</span><span class="s2">=</span><span class="s5">50</span><span class="s2">, </span><span class="s0">marker</span><span class="s2">=</span><span class="s4">'x'</span><span class="s2">)</span>
+<span class="s0">plt</span><span class="s2">.</span><span class="s0">title</span><span class="s2">(</span><span class="s4">f'Ground Truth (</span><span class="s1">{</span><span class="s0">len</span><span class="s2">(</span><span class="s0">true_kpts</span><span class="s2">)</span><span class="s1">} </span><span class="s4">keypoints)'</span><span class="s2">)</span>
+<span class="s0">plt</span><span class="s2">.</span><span class="s0">axis</span><span class="s2">(</span><span class="s4">'off'</span><span class="s2">)</span>
+
+<span class="s0">plt</span><span class="s2">.</span><span class="s0">subplot</span><span class="s2">(</span><span class="s5">1</span><span class="s2">, </span><span class="s5">3</span><span class="s2">, </span><span class="s5">2</span><span class="s2">)</span>
+<span class="s0">plt</span><span class="s2">.</span><span class="s0">imshow</span><span class="s2">(</span><span class="s0">averaged_heatmap</span><span class="s2">.</span><span class="s0">squeeze</span><span class="s2">().</span><span class="s0">cpu</span><span class="s2">().</span><span class="s0">numpy</span><span class="s2">(), </span><span class="s0">cmap</span><span class="s2">=</span><span class="s4">'hot'</span><span class="s2">)</span>
+<span class="s0">plt</span><span class="s2">.</span><span class="s0">title</span><span class="s2">(</span><span class="s4">'Averaged Heatmap'</span><span class="s2">)</span>
+<span class="s0">plt</span><span class="s2">.</span><span class="s0">axis</span><span class="s2">(</span><span class="s4">'off'</span><span class="s2">)</span>
+
+<span class="s0">plt</span><span class="s2">.</span><span class="s0">subplot</span><span class="s2">(</span><span class="s5">1</span><span class="s2">, </span><span class="s5">3</span><span class="s2">, </span><span class="s5">3</span><span class="s2">)</span>
+<span class="s0">plt</span><span class="s2">.</span><span class="s0">imshow</span><span class="s2">(</span><span class="s0">img</span><span class="s2">, </span><span class="s0">cmap</span><span class="s2">=</span><span class="s4">'gray'</span><span class="s2">)</span>
+<span class="s0">plt</span><span class="s2">.</span><span class="s0">scatter</span><span class="s2">(</span><span class="s0">detected_kpts</span><span class="s2">[:, </span><span class="s5">0</span><span class="s2">], </span><span class="s0">detected_kpts</span><span class="s2">[:, </span><span class="s5">1</span><span class="s2">], </span><span class="s0">c</span><span class="s2">=</span><span class="s4">'lime'</span><span class="s2">, </span><span class="s0">s</span><span class="s2">=</span><span class="s5">50</span><span class="s2">, </span><span class="s0">marker</span><span class="s2">=</span><span class="s4">'+'</span><span class="s2">)</span>
+<span class="s0">plt</span><span class="s2">.</span><span class="s0">title</span><span class="s2">(</span><span class="s4">f'Detected (</span><span class="s1">{</span><span class="s0">len</span><span class="s2">(</span><span class="s0">detected_kpts</span><span class="s2">)</span><span class="s1">} </span><span class="s4">keypoints)'</span><span class="s2">)</span>
+<span class="s0">plt</span><span class="s2">.</span><span class="s0">axis</span><span class="s2">(</span><span class="s4">'off'</span><span class="s2">)</span>
+
+<span class="s0">plt</span><span class="s2">.</span><span class="s0">tight_layout</span><span class="s2">()</span>
+<span class="s0">plt</span><span class="s2">.</span><span class="s0">show</span><span class="s2">()</span><hr class="ls0"><span class="s0">#%% 
+</span><span class="s1">def </span><span class="s0">test_extract_keypoints_from_target</span><span class="s2">():</span>
+    <span class="s1">from </span><span class="s0">Models </span><span class="s1">import </span><span class="s0">extract_keypoints_from_target</span><span class="s2">, </span><span class="s0">prepare_training_target_basic</span>
+
+    <span class="s3"># Generate sample and visualize target</span>
+    <span class="s0">img</span><span class="s2">, </span><span class="s0">kpts </span><span class="s2">= </span><span class="s0">generate_synthetic_image</span><span class="s2">(</span><span class="s5">256</span><span class="s2">, </span><span class="s5">256</span><span class="s2">, </span><span class="s0">grayscale</span><span class="s2">=</span><span class="s1">True</span><span class="s2">)</span>
+    <span class="s0">target </span><span class="s2">= </span><span class="s0">prepare_training_target_basic</span><span class="s2">([</span><span class="s0">kpts</span><span class="s2">], (</span><span class="s5">256</span><span class="s2">, </span><span class="s5">256</span><span class="s2">))</span>
+
+    <span class="s3"># Check target statistics</span>
+    <span class="s0">print</span><span class="s2">(</span><span class="s4">f&quot;Keypoints generated: </span><span class="s1">{</span><span class="s0">len</span><span class="s2">(</span><span class="s0">kpts</span><span class="s2">)</span><span class="s1">}</span><span class="s4">&quot;</span><span class="s2">)</span>
+    <span class="s0">print</span><span class="s2">(</span><span class="s4">f&quot;Active cells in target: </span><span class="s1">{</span><span class="s2">(</span><span class="s0">target</span><span class="s2">[</span><span class="s5">0</span><span class="s2">, :</span><span class="s5">64</span><span class="s2">].</span><span class="s0">sum</span><span class="s2">(</span><span class="s0">dim</span><span class="s2">=</span><span class="s5">0</span><span class="s2">) &gt; </span><span class="s5">0</span><span class="s2">).</span><span class="s0">sum</span><span class="s2">()</span><span class="s1">}</span><span class="s4">&quot;</span><span class="s2">)</span>
+    <span class="s0">print</span><span class="s2">(</span><span class="s4">f&quot;No-point cells: </span><span class="s1">{</span><span class="s2">(</span><span class="s0">target</span><span class="s2">[</span><span class="s5">0</span><span class="s2">, </span><span class="s5">64</span><span class="s2">] &gt; </span><span class="s5">0</span><span class="s2">).</span><span class="s0">sum</span><span class="s2">()</span><span class="s1">}</span><span class="s4">&quot;</span><span class="s2">)</span>
+
+    <span class="s3"># Extract keypoints from target</span>
+    <span class="s0">extracted </span><span class="s2">= </span><span class="s0">extract_keypoints_from_target</span><span class="s2">(</span><span class="s0">target</span><span class="s2">[</span><span class="s5">0</span><span class="s2">])</span>
+    <span class="s0">print</span><span class="s2">(</span><span class="s4">f&quot;Keypoints extracted: </span><span class="s1">{</span><span class="s0">len</span><span class="s2">(</span><span class="s0">extracted</span><span class="s2">)</span><span class="s1">}</span><span class="s4">&quot;</span><span class="s2">)</span>
+
+<span class="s0">test_extract_keypoints_from_target</span><span class="s2">()</span><hr class="ls0"><span class="s0">#%% md 
+## System Architecture 
+ 
+``` 
+┌─────────────────────────────────────────────────────────────────┐ 
+│                        TRAINING PIPELINE                         │ 
+└─────────────────────────────────────────────────────────────────┘ 
+ 
+┌──────────────────┐ 
+│  Generator.py    │ 
+│  Synthetic Data  │ 
+└────────┬─────────┘ 
+         │ 
+         │ Generates random shapes (triangles, quads, stars, 
+         │ checkerboards, cubes) with known keypoint positions 
+         ▼ 
+┌──────────────────────────────────────┐ 
+│  Image (256x256)     Keypoints       │ 
+│  ┌────────────┐      [(x1,y1),       │ 
+│  │  ▲    ╱╲   │       (x2,y2),       │ 
+│  │ ╱ ╲  ╱  ╲  │       (x3,y3), ...]  │ 
+│  │╱   ╲╱    ╲ │                       │ 
+│  └────────────┘                       │ 
+└──────────────┬───────────────────────┘ 
+               │ 
+               │ Apply augmentations: 
+               │ - Random homography (perspective transform) 
+               │ - Photometric changes (brightness/contrast) 
+               │ - Gaussian noise 
+               ▼ 
+┌─────────────────────────────────────┐ 
+│  Models.py: KeypointDataset         │ 
+│  Converts keypoints to target       │ 
+│  tensor (65 channels, 32x32)        │ 
+└──────────────┬──────────────────────┘ 
+               │ 
+               ▼ 
+┌─────────────────────────────────────────────────────┐ 
+│  Models.py: KeypointNet (Neural Network)            │ 
+│                                                      │ 
+│  INPUT: Grayscale image (1, 256, 256)               │ 
+│     ↓                                                │ 
+│  ┌──────────────────────────────────────┐           │ 
+│  │  Encoder (ResNet blocks)             │           │ 
+│  │  - Layer 1: 1→64 channels + pool     │           │ 
+│  │  - Layer 2: 64→64 channels + pool    │           │ 
+│  │  - Layer 3: 64→128 channels + pool   │           │ 
+│  │  - Layer 4: 128→128 channels         │           │ 
+│  └──────────────────────────────────────┘           │ 
+│     ↓ Feature map: (128, 32, 32)                    │ 
+│  ┌──────────────────────────────────────┐           │ 
+│  │  Decoder                             │           │ 
+│  │  - Conv: 128→256 channels            │           │ 
+│  │  - Conv: 256→65 channels             │           │ 
+│  └──────────────────────────────────────┘           │ 
+│     ↓                                                │ 
+│  OUTPUT: Logits (65, 32, 32)                        │ 
+│                                                      │ 
+│  65 channels = 64 spatial bins + 1 &quot;no point&quot; class │ 
+└─────────────────────────────────────────────────────┘ 
+               │ 
+               │ Loss: Cross-entropy 
+               │ Optimizer: Adam 
+               ▼ 
+┌──────────────────────────────┐ 
+│  Trained Model Checkpoint    │ 
+└──────────────────────────────┘ 
+ 
+ 
+┌─────────────────────────────────────────────────────────────────┐ 
+│                      INFERENCE PIPELINE                          │ 
+└─────────────────────────────────────────────────────────────────┘ 
+ 
+┌──────────────────┐ 
+│  Input Image     │ 
+│  (256x256)       │ 
+└────────┬─────────┘ 
+         │ 
+         ▼ 
+┌─────────────────────────────────────────────────────────┐ 
+│  Homography Adaptation (Optional, for better accuracy)  │ 
+│                                                          │ 
+│  1. Pad image by 30% on all sides                       │ 
+│  2. Generate 99 random homographies                     │ 
+│  3. For each homography:                                │ 
+│     - Warp padded image                                 │ 
+│     - Crop to center (original size)                    │ 
+│     - Get heatmap from network                          │ 
+│     - Pad heatmap                                       │ 
+│     - Inverse warp back                                 │ 
+│     - Crop to center                                    │ 
+│  4. Average all heatmaps                                │ 
+└─────────────────────────────┬───────────────────────────┘ 
+                              │ 
+                              ▼ 
+┌─────────────────────────────────────────────────────────┐ 
+│  KeypointNet.forward(return_logits=False)               │ 
+│                                                          │ 
+│  Logits (65, 32, 32)                                    │ 
+│     ↓ Softmax over 65 channels                          │ 
+│  Probabilities (65, 32, 32)                             │ 
+│     ↓ Remove &quot;no point&quot; channel                         │ 
+│  (64, 32, 32)                                           │ 
+│     ↓ Pixel Shuffle (depth_to_space 8x8)                │ 
+│  Heatmap (1, 256, 256)                                  │ 
+└─────────────────────────────┬───────────────────────────┘ 
+                              │ 
+                              ▼ 
+┌──────────────────────────────────────────────────────────┐ 
+│  detect_local_maxima()                                   │ 
+│                                                          │ 
+│  1. Find peaks using maximum filter (NMS)               │ 
+│  2. Refine each peak with weighted averaging            │ 
+│     in local neighborhood                               │ 
+└─────────────────────────────┬────────────────────────────┘ 
+                              │ 
+                              ▼ 
+┌──────────────────────────────────────┐ 
+│  Detected Keypoints                  │ 
+│  [(x1, y1), (x2, y2), ...]           │ 
+└──────────────────────────────────────┘ 
+``` <hr class="ls0">#%% md 
+# Deep Dive: Data Generation, Training &amp; Inference 
+ 
+## Data Generation Process 
+ 
+### Shape Generation Philosophy 
+ 
+Each shape type follows a similar pattern but with unique geometric rules: 
+ 
+**Triangle Generation** 
+- Starts by picking a random center point within safe margins from image edges 
+- Creates three vertices by placing points around the center at roughly 120-degree intervals 
+- Adds random jitter to angles (±15 degrees) so triangles aren't perfectly regular 
+- Random radius determines size, ensuring vertices stay within image bounds 
+- The three corner points become the keypoints we want the network to learn 
+ 
+**Quadrilateral Generation** 
+- Similar center-based approach but with four points at 90-degree intervals 
+- Can be configured as squares (equal sides) or rectangles (different width/height) 
+- Random rotation applied to the entire shape for variety 
+- Corner jitter makes shapes look more natural and less synthetic 
+- All four corners are marked as keypoints 
+ 
+**Star Generation** 
+- Most complex simple shape - has a center point plus N outer points 
+- Center is one keypoint, each tip of the star is another keypoint 
+- Points alternate between two radii (inner and outer) creating the star effect 
+- Number of points typically ranges from 4 to 8 
+- Random rotation prevents the network from memorizing fixed orientations 
+ 
+**Checkerboard Generation** 
+- Creates a grid pattern with alternating colors 
+- Keypoints are placed at every grid intersection point 
+- For a 5×5 checkerboard, you get 6×6 = 36 keypoints (edges of squares) 
+- Grid spacing is randomized to create variety in scale 
+- Most keypoint-dense pattern, good for testing detector capacity 
+ 
+**Cube Generation** 
+- Simulates a 3D cube by drawing two overlapping squares 
+- Front face square gives 4 keypoints 
+- Back face (smaller, offset) gives up to 4 more visible corner keypoints 
+- Creates depth illusion while maintaining 2D keypoint detection 
+- Teaches network about occlusion and layering 
+ 
+### Color Assignment Strategy 
+ 
+The color system ensures shapes are always visible against their background: 
+ 
+- When generating a shape, first decide if the image should be grayscale or color 
+- Pick a random background color 
+- For the shape, pick a color that differs by at least 50 intensity units from background 
+- This minimum difference guarantees visual contrast 
+- In grayscale mode, this becomes a brightness difference 
+- Prevents situations where shapes blend into background 
+ 
+### Augmentation Pipeline 
+ 
+**Homography Augmentation** 
+ 
+This is the most important augmentation for keypoint detection: 
+ 
+- Generates a random 3×3 transformation matrix representing perspective change 
+- Simulates what happens when you view a planar surface from different angles 
+- Can include rotation, scaling, shear, and perspective distortion 
+- Applied to both the image AND the keypoint coordinates (they move together) 
+- The transformation is invertible, so we can always map keypoints back 
+- Makes the network viewpoint-invariant - crucial for real-world use 
+ 
+**Photometric Augmentation** 
+ 
+Simple but effective brightness variation: 
+ 
+- Multiplies pixel intensities by a random factor between 0.7 and 1.3 
+- Simulates different lighting conditions (darker or brighter) 
+- Applied uniformly across entire image 
+- Prevents network from relying on absolute brightness values 
+- Forces learning of shape structure rather than intensity patterns 
+ 
+**Gaussian Noise Addition** 
+ 
+Adds realistic camera sensor noise: 
+ 
+- Random noise sampled from Gaussian distribution 
+- Standard deviation randomly chosen between 0.01 and 0.05 
+- Mimics real-world image imperfections 
+- Prevents overfitting to perfectly clean synthetic images 
+- Network learns to be robust to measurement uncertainty 
+ 
+## Training Process Detailed 
+ 
+### Target Encoding for 320×240 Image 
+ 
+Let's walk through how a keypoint at position (160, 120) gets encoded: 
+ 
+**Step 1: Grid Cell Assignment** 
+ 
+The 320×240 image is divided into an 8×8 grid of cells, creating a 40×30 grid structure: 
+- Grid width: 320 ÷ 8 = 40 cells 
+- Grid height: 240 ÷ 8 = 30 cells 
+- Each cell represents an 8×8 pixel region 
+ 
+For keypoint at (160, 120): 
+- Cell X-coordinate: 160 ÷ 8 = 20 
+- Cell Y-coordinate: 120 ÷ 8 = 15 
+- This keypoint belongs to grid cell (20, 15) 
+ 
+**Step 2: Sub-Cell Position** 
+ 
+Within that cell, find the exact 8×8 position: 
+- Sub-pixel X: 160 mod 8 = 0 (leftmost position in cell) 
+- Sub-pixel Y: 120 mod 8 = 0 (topmost position in cell) 
+- This identifies which of the 64 possible positions within the cell 
+ 
+**Step 3: Channel Index Calculation** 
+ 
+The 8×8 positions map to 64 channels (0-63): 
+- Channel index = sub_y × 8 + sub_x 
+- For our example: 1 × 8 + 6 = channel 14 
+ 
+**Step 4: Gaussian Distribution Creation** 
+ 
+Instead of a hard 1 at that position, create a soft Gaussian blob: 
+- Center the Gaussian at (sub_x, sub_y) = (0, 0) 
+- Use sigma = 1.0 for smoothness 
+- Create an 8×8 grid of values showing probability falloff 
+- This makes learning easier - nearby positions also get some activation 
+- Flattened into a 64-dimensional vector 
+ 
+**Step 5: Target Tensor Assembly** 
+ 
+The final training target is a (65, 30, 40) tensor: 
+- First 64 channels: Represent the 64 possible sub-pixel positions 
+- Channel 65: &quot;No keypoint here&quot; - filled with high values for empty cells 
+- At cell (20, 15): Place the 64-D Gaussian vector in channels 0-63 
+- At all other cells: Set channel 64 to high value 
+ 
+This creates a sparse tensor where most cells say &quot;no keypoint&quot; and a few cells have detailed position information. 
+ 
+**Why This Approach?** 
+ 
+The cell-based encoding solves several problems: 
+- Reduces spatial resolution (40×30 vs 320×240) for computational efficiency 
+- Still maintains good precision (up to 1/8 pixel accuracy within cells) 
+- Treats detection as classification problem (64+1 classes per cell) 
+- Multiple keypoints naturally handled (different cells) 
+- Differentiable for gradient-based learning 
+ 
+``` 
+Image (320×240)                 Grid (30×40)                     Per-cell 8×8 encoding 
+┌─────────────────────┐        ┌───┬───┬───┬───┬───┬───┐        ┌───┬───┬───┬───┬───┐ 
+│                     │        │  0│  1│  2│  3│  4│  5│ ...    │  0│  1│  2│  3│  4│ 
+│           ●         │        ├───┼───┼───┼───┼───┼───┤        ├───┼───┼───┼───┼───┤ 
+│                     │   →    │ 40│ 41│ 42│●43│ 44│ 45│ ... →  │  8│  9│ 10│ 11│ 12│ 
+│                     │        ├───┼───┼───┼───┼───┼───┤        ├───┼───┼───┼───┼───┤ 
+│                     │        │ 80│ 81│ 82│ 83│ 84│ 85│ ...    │ 16│ 17│ 18│●19│ 20│ 
+└─────────────────────┘        └───┴───┴───┴───┴───┴───┘        └───┴───┴───┴───┴───┘ 
+                                ... ... ... ... ... ...        (8×8 cell → 64 channels) 
+``` 
+ 
+### Loss Function Mechanics 
+ 
+**Cross-Entropy Over Spatial Cells** 
+ 
+The loss function treats each grid cell independently as a 65-class classification problem. 
+ 
+For the 320×240 example with a 40×30 grid: 
+- We have 40 × 30 = 1,200 independent classification problems to solve 
+- Each cell must choose one of 65 classes representing its content 
+- Classes 0-63: &quot;Keypoint at this specific sub-pixel position&quot; 
+- Class 64: &quot;No keypoint present in this cell&quot; 
+ 
+**Computation Steps:** 
+ 
+Starting with model output logits of shape (Batch, 65, 30, 40): 
+ 
+1. **Reshape for Classification:** 
+   - Rearrange dimensions to (Batch, 30, 40, 65) via permute operation 
+   - Flatten spatial dimensions: (Batch × 1,200, 65) - one row per grid cell 
+   - Each of the 1,200 rows represents a 65-way classification decision 
+ 
+2. **Prepare Ground Truth Labels:** 
+   - Target tensor starts in (65, 30, 40) format 
+   - Take argmax over the first dimension (65 channels) to get class labels 
+   - Result is (30, 40) grid where each cell contains its class index (0-64) 
+   - Flatten to (Batch × 1,200) class indices - one label per cell 
+ 
+3. **Compute Loss Per Cell:** 
+ 
+   For each cell *i* at position (row, col): 
+ 
+   ``` 
+   Loss_i = -log(softmax(logits_i)[target_class_i]) 
+   ``` 
+ 
+   Where: 
+   - `logits_i` is the 65-dimensional vector of raw scores for cell *i* 
+   - `target_class_i` is the ground truth class (0-64) for that cell 
+   - Softmax converts logits to probabilities that sum to 1.0 
+   - Negative log-likelihood penalizes wrong predictions 
+ 
+4. **Average Over All Cells:** 
+ 
+   ``` 
+   Total_Loss = (1/1200) × Σ Loss_i 
+   ``` 
+ 
+   The final loss is the mean of all 1,200 cell losses, providing a single scalar value for backpropagation. 
+ 
+**Why Cross-Entropy?** 
+ 
+This formulation transforms keypoint detection into a dense classification task: 
+ 
+- **Per-Cell Decision:** Each grid cell independently votes for its contents 
+- **Probabilistic Output:** Softmax produces calibrated confidence scores 
+- **Sharp Predictions:** Loss encourages the model to be confident (high probability on correct class) 
+- **Class Imbalance Handling:** Naturally handles the fact that most cells are &quot;no keypoint&quot; 
+- **Proven Architecture:** This approach mirrors SuperPoint's successful design 
+- **Gradient Flow:** Cross-entropy provides strong gradients even for small errors 
+ 
+ 
+## Inference Process Detailed 
+ 
+### Model Output Interpretation 
+ 
+**Raw Output: Logits Tensor** 
+ 
+When you call the model during training (return_logits=True): 
+- Shape: (Batch, 65, 30, 40) for our 320×240 example 
+- These are raw unnormalized scores (logits) 
+- Each of 1200 cells has 65 values competing 
+- Higher value = more confident in that class 
+ 
+**Conversion to Heatmap** 
+ 
+During inference (return_logits=False), the model performs several transformations: 
+ 
+**Step 1: Softmax Over Channels** 
+- Apply softmax to the 65 channels at each spatial location 
+- Now each cell has 65 probability values that sum to 1.0 
+- Shape still (Batch, 65, 30, 40) but now normalized 
+ 
+**Step 2: Remove &quot;No Keypoint&quot; Channel** 
+- Discard channel 64 (the &quot;no keypoint&quot; class) 
+- Keep only channels 0-63 (the actual position probabilities) 
+- Shape becomes (Batch, 64, 30, 40) 
+ 
+**Step 3: Pixel Shuffle (Depth-to-Space)** 
+ 
+This is converting channel depth back to spatial resolution: 
+ 
+For our 320×240 example: 
+- Input: (1, 64, 30, 40) tensor 
+- Interprets 64 channels as an 8×8 grid per cell 
+- Rearranges data: Each 8×8 block of channels becomes 8×8 spatial pixels 
+- Output: (1, 1, 240, 320) - full resolution heatmap! 
+ 
+The pixel shuffle operation: 
+- Takes the 64 probabilities in each cell 
+- Arranges them into an 8×8 spatial grid 
+- Stitches all cells together 
+- Result is a continuous probability map over the entire image 
+ 
+**Step 4: Heatmap Properties** 
+ 
+The final heatmap: 
+- Values range 0 to 1 (probabilities) 
+- High values indicate likely keypoint locations 
+- Peak brightness corresponds to keypoint confidence 
+- Smooth gradients around keypoints due to Gaussian encoding 
+ 
+### Keypoint Extraction from Heatmap 
+ 
+**Non-Maximum Suppression** 
+ 
+First stage finds local peaks: 
+- Apply maximum filter with kernel size 9×9 
+- This slides a window, keeping only maximum value 
+- Compare original heatmap to max-filtered version 
+- Where they match AND value exceeds threshold: that's a peak 
+- Eliminates close duplicate detections 
+ 
+**Sub-Pixel Refinement** 
+ 
+Second stage improves precision: 
+- For each detected peak, extract local neighborhood (e.g., 7×7 window) 
+- Compute weighted average of coordinates using heatmap values as weights 
+- X_refined = Σ(x × heatmap[x,y]) / Σ(heatmap[x,y]) 
+- Y_refined = Σ(y × heatmap[x,y]) / Σ(heatmap[x,y]) 
+- This shifts the keypoint to the center of mass of the activation 
+ 
+Result: Sub-pixel accurate keypoint positions 
+ 
+### Homography Adaptation (Inference Enhancement) 
+ 
+This technique dramatically improves keypoint repeatability: 
+ 
+**The Process:** 
+ 
+Generate 100 random homographies (including identity transformation) 
+ 
+For each homography H: 
+1. Pad the input image by 30% on all sides using replication 
+2. Apply homography H to warp the padded image 
+3. Crop the warped result back to original size (320×240) 
+4. Run this through the neural network to get a heatmap 
+5. Pad the output heatmap by 30% (same ratio as input) 
+6. Apply inverse homography H⁻¹ to unwarp the padded heatmap 
+7. Crop the unwarped heatmap to original size 
+ 
+Average all 100 heatmaps element-wise 
+ 
+**Why It Works:** 
+ 
+Each homography tests the image from a slightly different perspective - the network sees the same scene from 100 different angles. True keypoints appear consistently across views while false positives are random and get averaged out. The padding ensures warped images don't have black borders that could confuse the network. Inverse warping brings all detections back to a common coordinate frame for meaningful averaging. 
+ 
+**The Cost:** 
+ 
+Inference is 100× slower than single-shot detection because you're running the network 100 times. However, the quality improvement is substantial - repeatability increases significantly. This is why it's optional and primarily used during evaluation or when quality matters more than speed. 
+ 
+**Implementation Detail:** 
+ 
+The padding ratio (30%) is chosen to ensure that even aggressive perspective transforms don't clip important image content. The replicate padding mode extends border pixels outward, creating natural-looking boundaries rather than black bars.</span></pre>
+</body>
+</html>
