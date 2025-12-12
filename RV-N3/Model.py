@@ -52,23 +52,19 @@ class FlowNet(nn.Module):
     def __init__(self):
         super().__init__()
 
-        # ----- Encoder (4 nivoji, več kanalov) -----
-        self.down1 = DownBlock(6, 64, 7)  # 6 -> 64 (namesto 16)
-        self.down2 = DownBlock(64, 128, 5)  # 64 -> 128 (namesto 32)
-        self.down3 = DownBlock(128, 256, 3)  # 128 -> 256 (namesto 64)
-        self.down4 = DownBlock(256, 512, 3)  # Nov nivo
+        # Encoder (4 nivoji)
+        self.down1 = DownBlock(6, 64, 7)
+        self.down2 = DownBlock(64, 128, 5)
+        self.down3 = DownBlock(128, 256, 3)
+        self.down4 = DownBlock(256, 512, 3)
 
-        # Bottleneck
-        self.b1 = ConvBlock(512, 512, 3)
-        self.b2 = ConvBlock(512, 512, 3)
-
-        # ----- Decoder -----
-        self.up4 = nn.ConvTranspose2d(512, 256, kernel_size=2, stride=2)
+        # Decoder
+        self.up4 = nn.ConvTranspose2d(512, 256, kernel_size=2, stride=2)  # INPUT: 512
         self.up3 = nn.ConvTranspose2d(768, 256, kernel_size=2, stride=2)  # 768→256
         self.up2 = nn.ConvTranspose2d(514, 128, kernel_size=2, stride=2)  # 256+256+2=514
-        self.up1 = nn.ConvTranspose2d(258, 64, kernel_size=2, stride=2)  # 128+128+2=258
+        self.up1 = nn.ConvTranspose2d(258, 64, kernel_size=2, stride=2)   # 128+128+2=258
 
-        # ----- Multi-scale predictions -----
+        # Multi-scale predictions
         self.predict4 = nn.Conv2d(768, 2, kernel_size=1)  # 256+512=768
         self.predict3 = nn.Conv2d(514, 2, kernel_size=1)  # 256+256+2=514
         self.predict2 = nn.Conv2d(258, 2, kernel_size=1)  # 128+128+2=258
@@ -79,15 +75,11 @@ class FlowNet(nn.Module):
         x1, skip1 = self.down1(x)  # /2
         x2, skip2 = self.down2(x1)  # /4
         x3, skip3 = self.down3(x2)  # /8
-        x4, skip4 = self.down4(x3)  # /16 (nov)
-
-        # Bottleneck
-        xb = self.b1(x4)
-        xb = self.b2(xb)
+        x4, skip4 = self.down4(x3)  # /16
 
         # Decoder
         # Level 4 (1/16)
-        up4 = self.up4(xb)
+        up4 = self.up4(x4)
         concat4 = torch.cat([up4, skip4], dim=1)
         flow4 = self.predict4(concat4)
 
@@ -220,6 +212,7 @@ class FlyingChairsDataset(Dataset):
         img_pair = torch.cat([img1, img2], dim=0)
 
         return img_pair, flow
+
 
 # MPI-Sintel Dataset
 
