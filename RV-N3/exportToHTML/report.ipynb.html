@@ -1,0 +1,825 @@
+<html>
+<head>
+<title>report.ipynb</title>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<style type="text/css">
+.s0 { color: #bcbec4;}
+.s1 { color: #cf8e6d;}
+.s2 { color: #bcbec4;}
+.s3 { color: #6aab73;}
+.s4 { color: #7a7e85;}
+.s5 { color: #2aacb8;}
+.s6 { color: #5f826b; font-style: italic;}
+.ls0 { height: 1px; border-width: 0; color: #43454a; background-color:#43454a}
+</style>
+</head>
+<body bgcolor="#1e1f22">
+<table CELLSPACING=0 CELLPADDING=5 COLS=1 WIDTH="100%" BGCOLOR="#606060" >
+<tr><td><center>
+<font face="Arial, Helvetica" color="#000000">
+report.ipynb</font>
+</center></td></tr></table>
+<pre><span class="s0">#%% 
+</span><span class="s1">import </span><span class="s0">torchvision</span>
+<span class="s1">from </span><span class="s0">torchvision </span><span class="s1">import </span><span class="s0">transforms</span>
+<span class="s1">import </span><span class="s0">torch</span>
+<span class="s1">import </span><span class="s0">torch</span><span class="s2">.</span><span class="s0">nn</span><span class="s2">.</span><span class="s0">functional </span><span class="s1">as </span><span class="s0">F</span>
+<span class="s1">import </span><span class="s0">torch</span><span class="s2">.</span><span class="s0">optim </span><span class="s1">as </span><span class="s0">optim</span>
+<span class="s1">from </span><span class="s0">torch</span><span class="s2">.</span><span class="s0">utils</span><span class="s2">.</span><span class="s0">data </span><span class="s1">import </span><span class="s0">DataLoader</span>
+
+<span class="s1">import </span><span class="s0">matplotlib</span><span class="s2">.</span><span class="s0">colors </span><span class="s1">as </span><span class="s0">mcolors</span>
+<span class="s1">import </span><span class="s0">matplotlib</span><span class="s2">.</span><span class="s0">pyplot </span><span class="s1">as </span><span class="s0">plt</span>
+<span class="s1">from </span><span class="s0">pathlib </span><span class="s1">import </span><span class="s0">Path</span>
+<span class="s1">import </span><span class="s0">random</span>
+<span class="s1">import </span><span class="s0">numpy </span><span class="s1">as </span><span class="s0">np</span>
+
+<span class="s1">from </span><span class="s0">Helper </span><span class="s1">import </span><span class="s0">load_checkpoint_generic</span><span class="s2">, </span><span class="s0">save_checkpoint_generic</span>
+<span class="s1">from </span><span class="s0">Model </span><span class="s1">import </span><span class="s0">FlyingChairsDataset</span><span class="s2">, </span><span class="s0">MPISintelDataset</span>
+<span class="s1">from </span><span class="s0">Model </span><span class="s1">import </span><span class="s0">FlowNet</span>
+
+<hr class="ls0"><span class="s0">#%% 
+root </span><span class="s2">= </span><span class="s3">r&quot;C:\Users\simon\Desktop\RV\Racunalniski-Vid\RV-N3\datasets\FlyingChairs_release&quot;</span>
+<span class="s4"># root = r&quot;E:\datasets\FlyingChairs_release&quot;</span>
+
+<span class="s4"># transform = transforms.ToTensor()</span>
+<span class="s4"># transform = None</span>
+<span class="s0">transform </span><span class="s2">= </span><span class="s0">transforms</span><span class="s2">.</span><span class="s0">Compose</span><span class="s2">([</span>
+    <span class="s0">transforms</span><span class="s2">.</span><span class="s0">Resize</span><span class="s2">((</span><span class="s5">256</span><span class="s2">, </span><span class="s5">256</span><span class="s2">)),</span>
+    <span class="s0">transforms</span><span class="s2">.</span><span class="s0">ToTensor</span><span class="s2">()</span>
+<span class="s2">])</span>
+
+<span class="s0">dataset </span><span class="s2">= </span><span class="s0">FlyingChairsDataset</span><span class="s2">(</span><span class="s0">root</span><span class="s2">=</span><span class="s0">root</span><span class="s2">, </span><span class="s0">transform</span><span class="s2">=</span><span class="s0">transform</span><span class="s2">, </span><span class="s0">split</span><span class="s2">=</span><span class="s3">&quot;val&quot;</span><span class="s2">)</span>
+<span class="s0">loader </span><span class="s2">= </span><span class="s0">DataLoader</span><span class="s2">(</span><span class="s0">dataset</span><span class="s2">, </span><span class="s0">batch_size</span><span class="s2">=</span><span class="s5">16</span><span class="s2">, </span><span class="s0">shuffle</span><span class="s2">=</span><span class="s1">True</span><span class="s2">, </span><span class="s0">num_workers</span><span class="s2">=</span><span class="s5">0</span><span class="s2">)</span>
+
+<span class="s0">imgs</span><span class="s2">, </span><span class="s0">flows </span><span class="s2">= </span><span class="s0">next</span><span class="s2">(</span><span class="s0">iter</span><span class="s2">(</span><span class="s0">loader</span><span class="s2">))</span>
+<span class="s0">print</span><span class="s2">(</span><span class="s0">imgs</span><span class="s2">.</span><span class="s0">shape</span><span class="s2">, </span><span class="s0">flows</span><span class="s2">.</span><span class="s0">shape</span><span class="s2">)</span>
+<hr class="ls0"><span class="s0">#%% 
+imgs</span><span class="s2">, </span><span class="s0">flows </span><span class="s2">= </span><span class="s0">next</span><span class="s2">(</span><span class="s0">iter</span><span class="s2">(</span><span class="s0">loader</span><span class="s2">))</span>
+
+<span class="s4"># Extract first sample from batch</span>
+<span class="s0">img_pair </span><span class="s2">= </span><span class="s0">imgs</span><span class="s2">[</span><span class="s5">0</span><span class="s2">]  </span><span class="s4"># Shape: (6, H, W)</span>
+<span class="s0">flow </span><span class="s2">= </span><span class="s0">flows</span><span class="s2">[</span><span class="s5">0</span><span class="s2">]  </span><span class="s4"># Shape: (2, H, W)</span>
+
+<span class="s4"># Split the 6-channel image into two 3-channel images</span>
+<span class="s0">img1 </span><span class="s2">= </span><span class="s0">img_pair</span><span class="s2">[:</span><span class="s5">3</span><span class="s2">].</span><span class="s0">permute</span><span class="s2">(</span><span class="s5">1</span><span class="s2">, </span><span class="s5">2</span><span class="s2">, </span><span class="s5">0</span><span class="s2">).</span><span class="s0">cpu</span><span class="s2">().</span><span class="s0">numpy</span><span class="s2">()  </span><span class="s4"># (H, W, 3)</span>
+<span class="s0">img2 </span><span class="s2">= </span><span class="s0">img_pair</span><span class="s2">[</span><span class="s5">3</span><span class="s2">:].</span><span class="s0">permute</span><span class="s2">(</span><span class="s5">1</span><span class="s2">, </span><span class="s5">2</span><span class="s2">, </span><span class="s5">0</span><span class="s2">).</span><span class="s0">cpu</span><span class="s2">().</span><span class="s0">numpy</span><span class="s2">()  </span><span class="s4"># (H, W, 3)</span>
+
+<span class="s4"># Convert flow to numpy (H, W, 2)</span>
+<span class="s0">flow_np </span><span class="s2">= </span><span class="s0">flow</span><span class="s2">.</span><span class="s0">permute</span><span class="s2">(</span><span class="s5">1</span><span class="s2">, </span><span class="s5">2</span><span class="s2">, </span><span class="s5">0</span><span class="s2">).</span><span class="s0">cpu</span><span class="s2">().</span><span class="s0">numpy</span><span class="s2">()</span>
+
+<span class="s4"># Split flow components</span>
+<span class="s0">u </span><span class="s2">= </span><span class="s0">flow_np</span><span class="s2">[:, :, </span><span class="s5">0</span><span class="s2">]</span>
+<span class="s0">v </span><span class="s2">= </span><span class="s0">flow_np</span><span class="s2">[:, :, </span><span class="s5">1</span><span class="s2">]</span>
+
+<span class="s4"># Magnitude and angle</span>
+<span class="s0">mag </span><span class="s2">= </span><span class="s0">np</span><span class="s2">.</span><span class="s0">sqrt</span><span class="s2">(</span><span class="s0">u </span><span class="s2">** </span><span class="s5">2 </span><span class="s2">+ </span><span class="s0">v </span><span class="s2">** </span><span class="s5">2</span><span class="s2">)</span>
+<span class="s0">ang </span><span class="s2">= </span><span class="s0">np</span><span class="s2">.</span><span class="s0">arctan2</span><span class="s2">(</span><span class="s0">v</span><span class="s2">, </span><span class="s0">u</span><span class="s2">)  </span><span class="s4"># [-pi, pi]</span>
+
+<span class="s4"># Normalize for HSV</span>
+<span class="s0">h </span><span class="s2">= (</span><span class="s0">ang </span><span class="s2">+ </span><span class="s0">np</span><span class="s2">.</span><span class="s0">pi</span><span class="s2">) / (</span><span class="s5">2 </span><span class="s2">* </span><span class="s0">np</span><span class="s2">.</span><span class="s0">pi</span><span class="s2">)  </span><span class="s4"># hue ∈ [0,1]</span>
+<span class="s0">s </span><span class="s2">= </span><span class="s0">np</span><span class="s2">.</span><span class="s0">clip</span><span class="s2">(</span><span class="s0">mag </span><span class="s2">/ (</span><span class="s0">mag</span><span class="s2">.</span><span class="s0">max</span><span class="s2">() + </span><span class="s5">1e-6</span><span class="s2">), </span><span class="s5">0</span><span class="s2">, </span><span class="s5">1</span><span class="s2">)  </span><span class="s4"># saturation ∈ [0,1]</span>
+<span class="s0">v_ </span><span class="s2">= </span><span class="s0">np</span><span class="s2">.</span><span class="s0">ones_like</span><span class="s2">(</span><span class="s0">s</span><span class="s2">) * </span><span class="s5">0.9  </span><span class="s4"># brightness</span>
+
+<span class="s4"># Build HSV image</span>
+<span class="s0">hsv </span><span class="s2">= </span><span class="s0">np</span><span class="s2">.</span><span class="s0">stack</span><span class="s2">([</span><span class="s0">h</span><span class="s2">, </span><span class="s0">s</span><span class="s2">, </span><span class="s0">v_</span><span class="s2">], </span><span class="s0">axis</span><span class="s2">=-</span><span class="s5">1</span><span class="s2">)</span>
+<span class="s0">rgb_flow </span><span class="s2">= </span><span class="s0">mcolors</span><span class="s2">.</span><span class="s0">hsv_to_rgb</span><span class="s2">(</span><span class="s0">hsv</span><span class="s2">)</span>
+
+<span class="s4"># Plot</span>
+<span class="s0">plt</span><span class="s2">.</span><span class="s0">figure</span><span class="s2">(</span><span class="s0">figsize</span><span class="s2">=(</span><span class="s5">15</span><span class="s2">, </span><span class="s5">5</span><span class="s2">))</span>
+
+<span class="s0">plt</span><span class="s2">.</span><span class="s0">subplot</span><span class="s2">(</span><span class="s5">1</span><span class="s2">, </span><span class="s5">3</span><span class="s2">, </span><span class="s5">1</span><span class="s2">)</span>
+<span class="s0">plt</span><span class="s2">.</span><span class="s0">title</span><span class="s2">(</span><span class="s3">&quot;Image 1&quot;</span><span class="s2">)</span>
+<span class="s0">plt</span><span class="s2">.</span><span class="s0">imshow</span><span class="s2">(</span><span class="s0">img1</span><span class="s2">)</span>
+<span class="s0">plt</span><span class="s2">.</span><span class="s0">axis</span><span class="s2">(</span><span class="s3">&quot;off&quot;</span><span class="s2">)</span>
+
+<span class="s0">plt</span><span class="s2">.</span><span class="s0">subplot</span><span class="s2">(</span><span class="s5">1</span><span class="s2">, </span><span class="s5">3</span><span class="s2">, </span><span class="s5">2</span><span class="s2">)</span>
+<span class="s0">plt</span><span class="s2">.</span><span class="s0">title</span><span class="s2">(</span><span class="s3">&quot;Image 2&quot;</span><span class="s2">)</span>
+<span class="s0">plt</span><span class="s2">.</span><span class="s0">imshow</span><span class="s2">(</span><span class="s0">img2</span><span class="s2">)</span>
+<span class="s0">plt</span><span class="s2">.</span><span class="s0">axis</span><span class="s2">(</span><span class="s3">&quot;off&quot;</span><span class="s2">)</span>
+
+<span class="s0">plt</span><span class="s2">.</span><span class="s0">subplot</span><span class="s2">(</span><span class="s5">1</span><span class="s2">, </span><span class="s5">3</span><span class="s2">, </span><span class="s5">3</span><span class="s2">)</span>
+<span class="s0">plt</span><span class="s2">.</span><span class="s0">title</span><span class="s2">(</span><span class="s3">&quot;Optical Flow (HSV)&quot;</span><span class="s2">)</span>
+<span class="s0">plt</span><span class="s2">.</span><span class="s0">imshow</span><span class="s2">(</span><span class="s0">rgb_flow</span><span class="s2">)</span>
+<span class="s0">plt</span><span class="s2">.</span><span class="s0">axis</span><span class="s2">(</span><span class="s3">&quot;off&quot;</span><span class="s2">)</span>
+
+<span class="s0">plt</span><span class="s2">.</span><span class="s0">tight_layout</span><span class="s2">()</span>
+<span class="s0">plt</span><span class="s2">.</span><span class="s0">show</span><span class="s2">()</span><hr class="ls0"><span class="s0">#%% 
+</span><span class="s4"># Extract first sample from batch</span>
+<span class="s0">img_pair </span><span class="s2">= </span><span class="s0">imgs</span><span class="s2">[</span><span class="s5">0</span><span class="s2">]</span>
+<span class="s0">flow </span><span class="s2">= </span><span class="s0">flows</span><span class="s2">[</span><span class="s5">0</span><span class="s2">]</span>
+
+<span class="s4"># Split images and convert to numpy</span>
+<span class="s0">img1 </span><span class="s2">= </span><span class="s0">img_pair</span><span class="s2">[:</span><span class="s5">3</span><span class="s2">].</span><span class="s0">permute</span><span class="s2">(</span><span class="s5">1</span><span class="s2">, </span><span class="s5">2</span><span class="s2">, </span><span class="s5">0</span><span class="s2">).</span><span class="s0">cpu</span><span class="s2">().</span><span class="s0">numpy</span><span class="s2">()</span>
+<span class="s0">img2 </span><span class="s2">= </span><span class="s0">img_pair</span><span class="s2">[</span><span class="s5">3</span><span class="s2">:].</span><span class="s0">permute</span><span class="s2">(</span><span class="s5">1</span><span class="s2">, </span><span class="s5">2</span><span class="s2">, </span><span class="s5">0</span><span class="s2">).</span><span class="s0">cpu</span><span class="s2">().</span><span class="s0">numpy</span><span class="s2">()</span>
+<span class="s0">flow_np </span><span class="s2">= </span><span class="s0">flow</span><span class="s2">.</span><span class="s0">permute</span><span class="s2">(</span><span class="s5">1</span><span class="s2">, </span><span class="s5">2</span><span class="s2">, </span><span class="s5">0</span><span class="s2">).</span><span class="s0">cpu</span><span class="s2">().</span><span class="s0">numpy</span><span class="s2">()</span>
+
+<span class="s4"># Split flow components</span>
+<span class="s0">u </span><span class="s2">= </span><span class="s0">flow_np</span><span class="s2">[:, :, </span><span class="s5">0</span><span class="s2">]</span>
+<span class="s0">v </span><span class="s2">= </span><span class="s0">flow_np</span><span class="s2">[:, :, </span><span class="s5">1</span><span class="s2">]</span>
+
+<span class="s4"># Magnitude and angle</span>
+<span class="s0">mag </span><span class="s2">= </span><span class="s0">np</span><span class="s2">.</span><span class="s0">sqrt</span><span class="s2">(</span><span class="s0">u </span><span class="s2">** </span><span class="s5">2 </span><span class="s2">+ </span><span class="s0">v </span><span class="s2">** </span><span class="s5">2</span><span class="s2">)</span>
+<span class="s0">ang </span><span class="s2">= </span><span class="s0">np</span><span class="s2">.</span><span class="s0">arctan2</span><span class="s2">(</span><span class="s0">v</span><span class="s2">, </span><span class="s0">u</span><span class="s2">)</span>
+
+<span class="s4"># Normalize for HSV</span>
+<span class="s0">h </span><span class="s2">= (</span><span class="s0">ang </span><span class="s2">+ </span><span class="s0">np</span><span class="s2">.</span><span class="s0">pi</span><span class="s2">) / (</span><span class="s5">2 </span><span class="s2">* </span><span class="s0">np</span><span class="s2">.</span><span class="s0">pi</span><span class="s2">)</span>
+<span class="s0">s </span><span class="s2">= </span><span class="s0">np</span><span class="s2">.</span><span class="s0">clip</span><span class="s2">(</span><span class="s0">mag </span><span class="s2">/ (</span><span class="s0">mag</span><span class="s2">.</span><span class="s0">max</span><span class="s2">() + </span><span class="s5">1e-6</span><span class="s2">), </span><span class="s5">0</span><span class="s2">, </span><span class="s5">1</span><span class="s2">)</span>
+<span class="s0">v_ </span><span class="s2">= </span><span class="s0">np</span><span class="s2">.</span><span class="s0">ones_like</span><span class="s2">(</span><span class="s0">s</span><span class="s2">) * </span><span class="s5">0.9</span>
+
+<span class="s4"># Build HSV image</span>
+<span class="s0">hsv </span><span class="s2">= </span><span class="s0">np</span><span class="s2">.</span><span class="s0">stack</span><span class="s2">([</span><span class="s0">h</span><span class="s2">, </span><span class="s0">s</span><span class="s2">, </span><span class="s0">v_</span><span class="s2">], </span><span class="s0">axis</span><span class="s2">=-</span><span class="s5">1</span><span class="s2">)</span>
+<span class="s0">rgb_flow </span><span class="s2">= </span><span class="s0">mcolors</span><span class="s2">.</span><span class="s0">hsv_to_rgb</span><span class="s2">(</span><span class="s0">hsv</span><span class="s2">)</span>
+
+
+<span class="s4"># --- Create colorwheel legend ---</span>
+<span class="s1">def </span><span class="s0">make_colorwheel</span><span class="s2">(</span><span class="s0">size</span><span class="s2">=</span><span class="s5">256</span><span class="s2">):</span>
+    <span class="s6">&quot;&quot;&quot;Create a colorwheel showing flow direction and magnitude&quot;&quot;&quot;</span>
+    <span class="s0">y</span><span class="s2">, </span><span class="s0">x </span><span class="s2">= </span><span class="s0">np</span><span class="s2">.</span><span class="s0">mgrid</span><span class="s2">[-</span><span class="s0">size </span><span class="s2">// </span><span class="s5">2</span><span class="s2">:</span><span class="s0">size </span><span class="s2">// </span><span class="s5">2</span><span class="s2">, -</span><span class="s0">size </span><span class="s2">// </span><span class="s5">2</span><span class="s2">:</span><span class="s0">size </span><span class="s2">// </span><span class="s5">2</span><span class="s2">]</span>
+
+    <span class="s0">angle </span><span class="s2">= </span><span class="s0">np</span><span class="s2">.</span><span class="s0">arctan2</span><span class="s2">(-</span><span class="s0">y</span><span class="s2">, </span><span class="s0">x</span><span class="s2">)</span>
+    <span class="s0">radius </span><span class="s2">= </span><span class="s0">np</span><span class="s2">.</span><span class="s0">sqrt</span><span class="s2">(</span><span class="s0">x </span><span class="s2">** </span><span class="s5">2 </span><span class="s2">+ </span><span class="s0">y </span><span class="s2">** </span><span class="s5">2</span><span class="s2">)</span>
+
+    <span class="s0">hue </span><span class="s2">= (</span><span class="s0">angle </span><span class="s2">+ </span><span class="s0">np</span><span class="s2">.</span><span class="s0">pi</span><span class="s2">) / (</span><span class="s5">2 </span><span class="s2">* </span><span class="s0">np</span><span class="s2">.</span><span class="s0">pi</span><span class="s2">)</span>
+    <span class="s0">saturation </span><span class="s2">= </span><span class="s0">np</span><span class="s2">.</span><span class="s0">clip</span><span class="s2">(</span><span class="s0">radius </span><span class="s2">/ (</span><span class="s0">size </span><span class="s2">// </span><span class="s5">2</span><span class="s2">), </span><span class="s5">0</span><span class="s2">, </span><span class="s5">1</span><span class="s2">)</span>
+    <span class="s0">value </span><span class="s2">= </span><span class="s0">np</span><span class="s2">.</span><span class="s0">ones_like</span><span class="s2">(</span><span class="s0">saturation</span><span class="s2">) * </span><span class="s5">0.9</span>
+
+    <span class="s0">hsv_wheel </span><span class="s2">= </span><span class="s0">np</span><span class="s2">.</span><span class="s0">stack</span><span class="s2">([</span><span class="s0">hue</span><span class="s2">, </span><span class="s0">saturation</span><span class="s2">, </span><span class="s0">value</span><span class="s2">], </span><span class="s0">axis</span><span class="s2">=-</span><span class="s5">1</span><span class="s2">)</span>
+    <span class="s0">rgb_wheel </span><span class="s2">= </span><span class="s0">mcolors</span><span class="s2">.</span><span class="s0">hsv_to_rgb</span><span class="s2">(</span><span class="s0">hsv_wheel</span><span class="s2">)</span>
+
+    <span class="s0">mask </span><span class="s2">= </span><span class="s0">radius </span><span class="s2">&gt; (</span><span class="s0">size </span><span class="s2">// </span><span class="s5">2</span><span class="s2">)</span>
+    <span class="s0">rgb_wheel</span><span class="s2">[</span><span class="s0">mask</span><span class="s2">] = </span><span class="s5">1</span>
+
+    <span class="s1">return </span><span class="s0">rgb_wheel</span>
+
+
+<span class="s0">colorwheel </span><span class="s2">= </span><span class="s0">make_colorwheel</span><span class="s2">(</span><span class="s5">200</span><span class="s2">)</span>
+
+<span class="s4"># --- Plot in 2 rows ---</span>
+<span class="s0">fig</span><span class="s2">, </span><span class="s0">axes </span><span class="s2">= </span><span class="s0">plt</span><span class="s2">.</span><span class="s0">subplots</span><span class="s2">(</span><span class="s5">2</span><span class="s2">, </span><span class="s5">2</span><span class="s2">, </span><span class="s0">figsize</span><span class="s2">=(</span><span class="s5">12</span><span class="s2">, </span><span class="s5">10</span><span class="s2">))</span>
+
+<span class="s4"># First row: images</span>
+<span class="s0">axes</span><span class="s2">[</span><span class="s5">0</span><span class="s2">, </span><span class="s5">0</span><span class="s2">].</span><span class="s0">set_title</span><span class="s2">(</span><span class="s3">&quot;Image 1&quot;</span><span class="s2">, </span><span class="s0">fontsize</span><span class="s2">=</span><span class="s5">14</span><span class="s2">)</span>
+<span class="s0">axes</span><span class="s2">[</span><span class="s5">0</span><span class="s2">, </span><span class="s5">0</span><span class="s2">].</span><span class="s0">imshow</span><span class="s2">(</span><span class="s0">img1</span><span class="s2">)</span>
+<span class="s0">axes</span><span class="s2">[</span><span class="s5">0</span><span class="s2">, </span><span class="s5">0</span><span class="s2">].</span><span class="s0">axis</span><span class="s2">(</span><span class="s3">&quot;off&quot;</span><span class="s2">)</span>
+
+<span class="s0">axes</span><span class="s2">[</span><span class="s5">0</span><span class="s2">, </span><span class="s5">1</span><span class="s2">].</span><span class="s0">set_title</span><span class="s2">(</span><span class="s3">&quot;Image 2&quot;</span><span class="s2">, </span><span class="s0">fontsize</span><span class="s2">=</span><span class="s5">14</span><span class="s2">)</span>
+<span class="s0">axes</span><span class="s2">[</span><span class="s5">0</span><span class="s2">, </span><span class="s5">1</span><span class="s2">].</span><span class="s0">imshow</span><span class="s2">(</span><span class="s0">img2</span><span class="s2">)</span>
+<span class="s0">axes</span><span class="s2">[</span><span class="s5">0</span><span class="s2">, </span><span class="s5">1</span><span class="s2">].</span><span class="s0">axis</span><span class="s2">(</span><span class="s3">&quot;off&quot;</span><span class="s2">)</span>
+
+<span class="s4"># Second row: flow and legend</span>
+<span class="s0">axes</span><span class="s2">[</span><span class="s5">1</span><span class="s2">, </span><span class="s5">0</span><span class="s2">].</span><span class="s0">set_title</span><span class="s2">(</span><span class="s3">&quot;Optical Flow (HSV)&quot;</span><span class="s2">, </span><span class="s0">fontsize</span><span class="s2">=</span><span class="s5">14</span><span class="s2">)</span>
+<span class="s0">axes</span><span class="s2">[</span><span class="s5">1</span><span class="s2">, </span><span class="s5">0</span><span class="s2">].</span><span class="s0">imshow</span><span class="s2">(</span><span class="s0">rgb_flow</span><span class="s2">)</span>
+<span class="s0">axes</span><span class="s2">[</span><span class="s5">1</span><span class="s2">, </span><span class="s5">0</span><span class="s2">].</span><span class="s0">axis</span><span class="s2">(</span><span class="s3">&quot;off&quot;</span><span class="s2">)</span>
+
+<span class="s0">axes</span><span class="s2">[</span><span class="s5">1</span><span class="s2">, </span><span class="s5">1</span><span class="s2">].</span><span class="s0">set_title</span><span class="s2">(</span><span class="s3">&quot;Flow Legend&quot;</span><span class="s2">, </span><span class="s0">fontsize</span><span class="s2">=</span><span class="s5">14</span><span class="s2">)</span>
+<span class="s0">axes</span><span class="s2">[</span><span class="s5">1</span><span class="s2">, </span><span class="s5">1</span><span class="s2">].</span><span class="s0">imshow</span><span class="s2">(</span><span class="s0">colorwheel</span><span class="s2">)</span>
+<span class="s0">axes</span><span class="s2">[</span><span class="s5">1</span><span class="s2">, </span><span class="s5">1</span><span class="s2">].</span><span class="s0">axis</span><span class="s2">(</span><span class="s3">&quot;off&quot;</span><span class="s2">)</span>
+
+<span class="s4"># Add text annotations to legend</span>
+<span class="s0">axes</span><span class="s2">[</span><span class="s5">1</span><span class="s2">, </span><span class="s5">1</span><span class="s2">].</span><span class="s0">text</span><span class="s2">(</span><span class="s5">200</span><span class="s2">, </span><span class="s5">100</span><span class="s2">, </span><span class="s3">&quot;→ E&quot;</span><span class="s2">, </span><span class="s0">ha</span><span class="s2">=</span><span class="s3">'left'</span><span class="s2">, </span><span class="s0">va</span><span class="s2">=</span><span class="s3">'center'</span><span class="s2">, </span><span class="s0">fontsize</span><span class="s2">=</span><span class="s5">10</span><span class="s2">, </span><span class="s0">color</span><span class="s2">=</span><span class="s3">'black'</span><span class="s2">)</span>
+<span class="s0">axes</span><span class="s2">[</span><span class="s5">1</span><span class="s2">, </span><span class="s5">1</span><span class="s2">].</span><span class="s0">text</span><span class="s2">(</span><span class="s5">0</span><span class="s2">, </span><span class="s5">100</span><span class="s2">, </span><span class="s3">&quot;W ←&quot;</span><span class="s2">, </span><span class="s0">ha</span><span class="s2">=</span><span class="s3">'right'</span><span class="s2">, </span><span class="s0">va</span><span class="s2">=</span><span class="s3">'center'</span><span class="s2">, </span><span class="s0">fontsize</span><span class="s2">=</span><span class="s5">10</span><span class="s2">, </span><span class="s0">color</span><span class="s2">=</span><span class="s3">'black'</span><span class="s2">)</span>
+<span class="s0">axes</span><span class="s2">[</span><span class="s5">1</span><span class="s2">, </span><span class="s5">1</span><span class="s2">].</span><span class="s0">text</span><span class="s2">(</span><span class="s5">100</span><span class="s2">, </span><span class="s5">0</span><span class="s2">, </span><span class="s3">&quot;↑</span><span class="s1">\n</span><span class="s3">N&quot;</span><span class="s2">, </span><span class="s0">ha</span><span class="s2">=</span><span class="s3">'center'</span><span class="s2">, </span><span class="s0">va</span><span class="s2">=</span><span class="s3">'bottom'</span><span class="s2">, </span><span class="s0">fontsize</span><span class="s2">=</span><span class="s5">10</span><span class="s2">, </span><span class="s0">color</span><span class="s2">=</span><span class="s3">'black'</span><span class="s2">)</span>
+<span class="s0">axes</span><span class="s2">[</span><span class="s5">1</span><span class="s2">, </span><span class="s5">1</span><span class="s2">].</span><span class="s0">text</span><span class="s2">(</span><span class="s5">100</span><span class="s2">, </span><span class="s5">200</span><span class="s2">, </span><span class="s3">&quot;S</span><span class="s1">\n</span><span class="s3">↓&quot;</span><span class="s2">, </span><span class="s0">ha</span><span class="s2">=</span><span class="s3">'center'</span><span class="s2">, </span><span class="s0">va</span><span class="s2">=</span><span class="s3">'top'</span><span class="s2">, </span><span class="s0">fontsize</span><span class="s2">=</span><span class="s5">10</span><span class="s2">, </span><span class="s0">color</span><span class="s2">=</span><span class="s3">'black'</span><span class="s2">)</span>
+<span class="s0">axes</span><span class="s2">[</span><span class="s5">1</span><span class="s2">, </span><span class="s5">1</span><span class="s2">].</span><span class="s0">text</span><span class="s2">(</span><span class="s5">100</span><span class="s2">, </span><span class="s5">100</span><span class="s2">, </span><span class="s3">&quot;No motion&quot;</span><span class="s2">, </span><span class="s0">ha</span><span class="s2">=</span><span class="s3">'center'</span><span class="s2">, </span><span class="s0">va</span><span class="s2">=</span><span class="s3">'center'</span><span class="s2">, </span><span class="s0">fontsize</span><span class="s2">=</span><span class="s5">9</span><span class="s2">,</span>
+                <span class="s0">bbox</span><span class="s2">=</span><span class="s0">dict</span><span class="s2">(</span><span class="s0">boxstyle</span><span class="s2">=</span><span class="s3">'round'</span><span class="s2">, </span><span class="s0">facecolor</span><span class="s2">=</span><span class="s3">'white'</span><span class="s2">, </span><span class="s0">alpha</span><span class="s2">=</span><span class="s5">0.8</span><span class="s2">))</span>
+
+<span class="s0">plt</span><span class="s2">.</span><span class="s0">tight_layout</span><span class="s2">()</span>
+<span class="s0">plt</span><span class="s2">.</span><span class="s0">show</span><span class="s2">()</span>
+
+<span class="s4"># Print flow statistics</span>
+<span class="s0">print</span><span class="s2">(</span><span class="s3">f&quot;Flow magnitude range: [</span><span class="s1">{</span><span class="s0">mag</span><span class="s2">.</span><span class="s0">min</span><span class="s2">()</span><span class="s1">:</span><span class="s3">.2f</span><span class="s1">}</span><span class="s3">, </span><span class="s1">{</span><span class="s0">mag</span><span class="s2">.</span><span class="s0">max</span><span class="s2">()</span><span class="s1">:</span><span class="s3">.2f</span><span class="s1">}</span><span class="s3">] pixels&quot;</span><span class="s2">)</span>
+<span class="s0">print</span><span class="s2">(</span><span class="s3">f&quot;Mean flow magnitude: </span><span class="s1">{</span><span class="s0">mag</span><span class="s2">.</span><span class="s0">mean</span><span class="s2">()</span><span class="s1">:</span><span class="s3">.2f</span><span class="s1">} </span><span class="s3">pixels&quot;</span><span class="s2">)</span><hr class="ls0"><span class="s0">#%% 
+</span><span class="s1">def </span><span class="s0">visualize_flow_prediction</span><span class="s2">(</span><span class="s0">model</span><span class="s2">, </span><span class="s0">dataset</span><span class="s2">, </span><span class="s0">idx</span><span class="s2">=</span><span class="s5">0</span><span class="s2">, </span><span class="s0">device</span><span class="s2">=</span><span class="s3">'cpu'</span><span class="s2">):</span>
+    <span class="s6">&quot;&quot;&quot; 
+    Visualize model's flow prediction 
+    &quot;&quot;&quot;</span>
+    <span class="s0">model</span><span class="s2">.</span><span class="s0">eval</span><span class="s2">()</span>
+    <span class="s0">model </span><span class="s2">= </span><span class="s0">model</span><span class="s2">.</span><span class="s0">to</span><span class="s2">(</span><span class="s0">device</span><span class="s2">)</span>
+
+    <span class="s4"># Get data (dataset returns img_pair, flow_gt)</span>
+    <span class="s0">img_pair</span><span class="s2">, </span><span class="s0">flow_gt </span><span class="s2">= </span><span class="s0">dataset</span><span class="s2">[</span><span class="s0">idx</span><span class="s2">]</span>
+
+    <span class="s4"># Split concatenated images</span>
+    <span class="s0">img1 </span><span class="s2">= </span><span class="s0">img_pair</span><span class="s2">[:</span><span class="s5">3</span><span class="s2">]  </span><span class="s4"># First 3 channels</span>
+    <span class="s0">img2 </span><span class="s2">= </span><span class="s0">img_pair</span><span class="s2">[</span><span class="s5">3</span><span class="s2">:]  </span><span class="s4"># Last 3 channels</span>
+
+    <span class="s4"># Add batch dimension and move to device</span>
+    <span class="s0">img_pair_batch </span><span class="s2">= </span><span class="s0">img_pair</span><span class="s2">.</span><span class="s0">unsqueeze</span><span class="s2">(</span><span class="s5">0</span><span class="s2">).</span><span class="s0">to</span><span class="s2">(</span><span class="s0">device</span><span class="s2">)</span>
+
+    <span class="s4"># Predict flow</span>
+    <span class="s1">with </span><span class="s0">torch</span><span class="s2">.</span><span class="s0">no_grad</span><span class="s2">():</span>
+        <span class="s0">flow_preds </span><span class="s2">= </span><span class="s0">model</span><span class="s2">(</span><span class="s0">img_pair_batch</span><span class="s2">)</span>
+        <span class="s0">flow_pred </span><span class="s2">= </span><span class="s0">flow_preds</span><span class="s2">[</span><span class="s5">0</span><span class="s2">]  </span><span class="s4"># Get full resolution prediction</span>
+
+    <span class="s4"># Convert to numpy</span>
+    <span class="s0">img1_np </span><span class="s2">= </span><span class="s0">img1</span><span class="s2">.</span><span class="s0">permute</span><span class="s2">(</span><span class="s5">1</span><span class="s2">, </span><span class="s5">2</span><span class="s2">, </span><span class="s5">0</span><span class="s2">).</span><span class="s0">cpu</span><span class="s2">().</span><span class="s0">numpy</span><span class="s2">()</span>
+    <span class="s0">img2_np </span><span class="s2">= </span><span class="s0">img2</span><span class="s2">.</span><span class="s0">permute</span><span class="s2">(</span><span class="s5">1</span><span class="s2">, </span><span class="s5">2</span><span class="s2">, </span><span class="s5">0</span><span class="s2">).</span><span class="s0">cpu</span><span class="s2">().</span><span class="s0">numpy</span><span class="s2">()</span>
+    <span class="s0">flow_gt_np </span><span class="s2">= </span><span class="s0">flow_gt</span><span class="s2">.</span><span class="s0">permute</span><span class="s2">(</span><span class="s5">1</span><span class="s2">, </span><span class="s5">2</span><span class="s2">, </span><span class="s5">0</span><span class="s2">).</span><span class="s0">cpu</span><span class="s2">().</span><span class="s0">numpy</span><span class="s2">()</span>
+    <span class="s0">flow_pred_np </span><span class="s2">= </span><span class="s0">flow_pred</span><span class="s2">[</span><span class="s5">0</span><span class="s2">].</span><span class="s0">permute</span><span class="s2">(</span><span class="s5">1</span><span class="s2">, </span><span class="s5">2</span><span class="s2">, </span><span class="s5">0</span><span class="s2">).</span><span class="s0">cpu</span><span class="s2">().</span><span class="s0">numpy</span><span class="s2">()</span>
+
+    <span class="s4"># Visualize using HSV color coding</span>
+    <span class="s1">def </span><span class="s0">flow_to_hsv</span><span class="s2">(</span><span class="s0">flow</span><span class="s2">):</span>
+        <span class="s0">u </span><span class="s2">= </span><span class="s0">flow</span><span class="s2">[:, :, </span><span class="s5">0</span><span class="s2">]</span>
+        <span class="s0">v </span><span class="s2">= </span><span class="s0">flow</span><span class="s2">[:, :, </span><span class="s5">1</span><span class="s2">]</span>
+
+        <span class="s0">mag </span><span class="s2">= </span><span class="s0">np</span><span class="s2">.</span><span class="s0">sqrt</span><span class="s2">(</span><span class="s0">u </span><span class="s2">** </span><span class="s5">2 </span><span class="s2">+ </span><span class="s0">v </span><span class="s2">** </span><span class="s5">2</span><span class="s2">)</span>
+        <span class="s0">ang </span><span class="s2">= </span><span class="s0">np</span><span class="s2">.</span><span class="s0">arctan2</span><span class="s2">(</span><span class="s0">v</span><span class="s2">, </span><span class="s0">u</span><span class="s2">)</span>
+
+        <span class="s0">h </span><span class="s2">= (</span><span class="s0">ang </span><span class="s2">+ </span><span class="s0">np</span><span class="s2">.</span><span class="s0">pi</span><span class="s2">) / (</span><span class="s5">2 </span><span class="s2">* </span><span class="s0">np</span><span class="s2">.</span><span class="s0">pi</span><span class="s2">)</span>
+        <span class="s0">s </span><span class="s2">= </span><span class="s0">np</span><span class="s2">.</span><span class="s0">clip</span><span class="s2">(</span><span class="s0">mag </span><span class="s2">/ (</span><span class="s0">mag</span><span class="s2">.</span><span class="s0">max</span><span class="s2">() + </span><span class="s5">1e-6</span><span class="s2">), </span><span class="s5">0</span><span class="s2">, </span><span class="s5">1</span><span class="s2">)</span>
+        <span class="s0">v_ </span><span class="s2">= </span><span class="s0">np</span><span class="s2">.</span><span class="s0">ones_like</span><span class="s2">(</span><span class="s0">s</span><span class="s2">)</span>
+
+        <span class="s0">hsv </span><span class="s2">= </span><span class="s0">np</span><span class="s2">.</span><span class="s0">stack</span><span class="s2">([</span><span class="s0">h</span><span class="s2">, </span><span class="s0">s</span><span class="s2">, </span><span class="s0">v_</span><span class="s2">], </span><span class="s0">axis</span><span class="s2">=-</span><span class="s5">1</span><span class="s2">)</span>
+        <span class="s1">return </span><span class="s0">mcolors</span><span class="s2">.</span><span class="s0">hsv_to_rgb</span><span class="s2">(</span><span class="s0">hsv</span><span class="s2">)</span>
+
+    <span class="s0">flow_gt_hsv </span><span class="s2">= </span><span class="s0">flow_to_hsv</span><span class="s2">(</span><span class="s0">flow_gt_np</span><span class="s2">)</span>
+    <span class="s0">flow_pred_hsv </span><span class="s2">= </span><span class="s0">flow_to_hsv</span><span class="s2">(</span><span class="s0">flow_pred_np</span><span class="s2">)</span>
+
+    <span class="s4"># Compute endpoint error</span>
+    <span class="s0">epe </span><span class="s2">= </span><span class="s0">np</span><span class="s2">.</span><span class="s0">linalg</span><span class="s2">.</span><span class="s0">norm</span><span class="s2">(</span><span class="s0">flow_pred_np </span><span class="s2">- </span><span class="s0">flow_gt_np</span><span class="s2">, </span><span class="s0">axis</span><span class="s2">=</span><span class="s5">2</span><span class="s2">).</span><span class="s0">mean</span><span class="s2">()</span>
+
+    <span class="s4"># Plot - 2 rows, 3 columns</span>
+    <span class="s0">fig</span><span class="s2">, </span><span class="s0">axes </span><span class="s2">= </span><span class="s0">plt</span><span class="s2">.</span><span class="s0">subplots</span><span class="s2">(</span><span class="s5">2</span><span class="s2">, </span><span class="s5">3</span><span class="s2">, </span><span class="s0">figsize</span><span class="s2">=(</span><span class="s5">18</span><span class="s2">, </span><span class="s5">10</span><span class="s2">))</span>
+
+    <span class="s4"># First row: input images</span>
+    <span class="s0">axes</span><span class="s2">[</span><span class="s5">0</span><span class="s2">, </span><span class="s5">0</span><span class="s2">].</span><span class="s0">imshow</span><span class="s2">(</span><span class="s0">img1_np</span><span class="s2">)</span>
+    <span class="s0">axes</span><span class="s2">[</span><span class="s5">0</span><span class="s2">, </span><span class="s5">0</span><span class="s2">].</span><span class="s0">set_title</span><span class="s2">(</span><span class="s3">&quot;Image 1&quot;</span><span class="s2">, </span><span class="s0">fontsize</span><span class="s2">=</span><span class="s5">14</span><span class="s2">)</span>
+    <span class="s0">axes</span><span class="s2">[</span><span class="s5">0</span><span class="s2">, </span><span class="s5">0</span><span class="s2">].</span><span class="s0">axis</span><span class="s2">(</span><span class="s3">&quot;off&quot;</span><span class="s2">)</span>
+
+    <span class="s0">axes</span><span class="s2">[</span><span class="s5">0</span><span class="s2">, </span><span class="s5">1</span><span class="s2">].</span><span class="s0">imshow</span><span class="s2">(</span><span class="s0">img2_np</span><span class="s2">)</span>
+    <span class="s0">axes</span><span class="s2">[</span><span class="s5">0</span><span class="s2">, </span><span class="s5">1</span><span class="s2">].</span><span class="s0">set_title</span><span class="s2">(</span><span class="s3">&quot;Image 2&quot;</span><span class="s2">, </span><span class="s0">fontsize</span><span class="s2">=</span><span class="s5">14</span><span class="s2">)</span>
+    <span class="s0">axes</span><span class="s2">[</span><span class="s5">0</span><span class="s2">, </span><span class="s5">1</span><span class="s2">].</span><span class="s0">axis</span><span class="s2">(</span><span class="s3">&quot;off&quot;</span><span class="s2">)</span>
+
+    <span class="s4"># Hide third subplot in first row</span>
+    <span class="s0">axes</span><span class="s2">[</span><span class="s5">0</span><span class="s2">, </span><span class="s5">2</span><span class="s2">].</span><span class="s0">axis</span><span class="s2">(</span><span class="s3">&quot;off&quot;</span><span class="s2">)</span>
+
+    <span class="s4"># Second row: flows and error</span>
+    <span class="s0">axes</span><span class="s2">[</span><span class="s5">1</span><span class="s2">, </span><span class="s5">0</span><span class="s2">].</span><span class="s0">imshow</span><span class="s2">(</span><span class="s0">flow_gt_hsv</span><span class="s2">)</span>
+    <span class="s0">axes</span><span class="s2">[</span><span class="s5">1</span><span class="s2">, </span><span class="s5">0</span><span class="s2">].</span><span class="s0">set_title</span><span class="s2">(</span><span class="s3">&quot;Ground Truth Flow&quot;</span><span class="s2">, </span><span class="s0">fontsize</span><span class="s2">=</span><span class="s5">14</span><span class="s2">)</span>
+    <span class="s0">axes</span><span class="s2">[</span><span class="s5">1</span><span class="s2">, </span><span class="s5">0</span><span class="s2">].</span><span class="s0">axis</span><span class="s2">(</span><span class="s3">&quot;off&quot;</span><span class="s2">)</span>
+
+    <span class="s0">axes</span><span class="s2">[</span><span class="s5">1</span><span class="s2">, </span><span class="s5">1</span><span class="s2">].</span><span class="s0">imshow</span><span class="s2">(</span><span class="s0">flow_pred_hsv</span><span class="s2">)</span>
+    <span class="s0">axes</span><span class="s2">[</span><span class="s5">1</span><span class="s2">, </span><span class="s5">1</span><span class="s2">].</span><span class="s0">set_title</span><span class="s2">(</span><span class="s3">f&quot;Predicted Flow (EPE: </span><span class="s1">{</span><span class="s0">epe</span><span class="s1">:</span><span class="s3">.2f</span><span class="s1">}</span><span class="s3">)&quot;</span><span class="s2">, </span><span class="s0">fontsize</span><span class="s2">=</span><span class="s5">14</span><span class="s2">)</span>
+    <span class="s0">axes</span><span class="s2">[</span><span class="s5">1</span><span class="s2">, </span><span class="s5">1</span><span class="s2">].</span><span class="s0">axis</span><span class="s2">(</span><span class="s3">&quot;off&quot;</span><span class="s2">)</span>
+
+    <span class="s0">error_map </span><span class="s2">= </span><span class="s0">np</span><span class="s2">.</span><span class="s0">linalg</span><span class="s2">.</span><span class="s0">norm</span><span class="s2">(</span><span class="s0">flow_pred_np </span><span class="s2">- </span><span class="s0">flow_gt_np</span><span class="s2">, </span><span class="s0">axis</span><span class="s2">=</span><span class="s5">2</span><span class="s2">)</span>
+    <span class="s0">im </span><span class="s2">= </span><span class="s0">axes</span><span class="s2">[</span><span class="s5">1</span><span class="s2">, </span><span class="s5">2</span><span class="s2">].</span><span class="s0">imshow</span><span class="s2">(</span><span class="s0">error_map</span><span class="s2">, </span><span class="s0">cmap</span><span class="s2">=</span><span class="s3">'hot'</span><span class="s2">)</span>
+    <span class="s0">axes</span><span class="s2">[</span><span class="s5">1</span><span class="s2">, </span><span class="s5">2</span><span class="s2">].</span><span class="s0">set_title</span><span class="s2">(</span><span class="s3">&quot;Error Map&quot;</span><span class="s2">, </span><span class="s0">fontsize</span><span class="s2">=</span><span class="s5">14</span><span class="s2">)</span>
+    <span class="s0">axes</span><span class="s2">[</span><span class="s5">1</span><span class="s2">, </span><span class="s5">2</span><span class="s2">].</span><span class="s0">axis</span><span class="s2">(</span><span class="s3">&quot;off&quot;</span><span class="s2">)</span>
+    <span class="s0">plt</span><span class="s2">.</span><span class="s0">colorbar</span><span class="s2">(</span><span class="s0">im</span><span class="s2">, </span><span class="s0">ax</span><span class="s2">=</span><span class="s0">axes</span><span class="s2">[</span><span class="s5">1</span><span class="s2">, </span><span class="s5">2</span><span class="s2">], </span><span class="s0">fraction</span><span class="s2">=</span><span class="s5">0.046</span><span class="s2">, </span><span class="s0">pad</span><span class="s2">=</span><span class="s5">0.04</span><span class="s2">)</span>
+
+    <span class="s0">plt</span><span class="s2">.</span><span class="s0">tight_layout</span><span class="s2">()</span>
+    <span class="s0">plt</span><span class="s2">.</span><span class="s0">show</span><span class="s2">()</span>
+
+    <span class="s0">print</span><span class="s2">(</span><span class="s3">f&quot;Average Endpoint Error: </span><span class="s1">{</span><span class="s0">epe</span><span class="s1">:</span><span class="s3">.4f</span><span class="s1">} </span><span class="s3">pixels&quot;</span><span class="s2">)</span>
+    <span class="s1">return </span><span class="s0">epe</span><hr class="ls0"><span class="s0">#%% 
+root </span><span class="s2">= </span><span class="s3">r&quot;C:\Users\simon\Desktop\RV\Racunalniski-Vid\RV-N3\datasets\FlyingChairs_release&quot;</span>
+<span class="s0">checkpoint_dir </span><span class="s2">= </span><span class="s0">Path</span><span class="s2">(</span><span class="s3">'./checkpoints'</span><span class="s2">)</span>
+
+<span class="s0">transform </span><span class="s2">= </span><span class="s0">transforms</span><span class="s2">.</span><span class="s0">Compose</span><span class="s2">([</span>
+    <span class="s0">transforms</span><span class="s2">.</span><span class="s0">Resize</span><span class="s2">((</span><span class="s5">256</span><span class="s2">, </span><span class="s5">256</span><span class="s2">)),</span>
+    <span class="s0">transforms</span><span class="s2">.</span><span class="s0">ToTensor</span><span class="s2">()</span>
+<span class="s2">])</span>
+
+<span class="s0">dataset </span><span class="s2">= </span><span class="s0">FlyingChairsDataset</span><span class="s2">(</span><span class="s0">root</span><span class="s2">=</span><span class="s0">root</span><span class="s2">, </span><span class="s0">transform</span><span class="s2">=</span><span class="s0">transform</span><span class="s2">, </span><span class="s0">split</span><span class="s2">=</span><span class="s3">&quot;train&quot;</span><span class="s2">)</span>
+
+<span class="s4"># Cell: Load best model and visualize</span>
+<span class="s0">device </span><span class="s2">= </span><span class="s0">torch</span><span class="s2">.</span><span class="s0">device</span><span class="s2">(</span><span class="s3">'cuda' </span><span class="s1">if </span><span class="s0">torch</span><span class="s2">.</span><span class="s0">cuda</span><span class="s2">.</span><span class="s0">is_available</span><span class="s2">() </span><span class="s1">else </span><span class="s3">'cpu'</span><span class="s2">)</span>
+<span class="s0">model </span><span class="s2">= </span><span class="s0">FlowNet</span><span class="s2">().</span><span class="s0">to</span><span class="s2">(</span><span class="s0">device</span><span class="s2">)</span>
+
+<span class="s0">best_model_path </span><span class="s2">= </span><span class="s0">checkpoint_dir </span><span class="s2">/ </span><span class="s3">'best_flownet_model.pth'</span>
+<span class="s0">checkpoint </span><span class="s2">= </span><span class="s0">torch</span><span class="s2">.</span><span class="s0">load</span><span class="s2">(</span><span class="s0">best_model_path</span><span class="s2">, </span><span class="s0">map_location</span><span class="s2">=</span><span class="s0">device</span><span class="s2">)</span>
+<span class="s0">model</span><span class="s2">.</span><span class="s0">load_state_dict</span><span class="s2">(</span><span class="s0">checkpoint</span><span class="s2">[</span><span class="s3">'model_state_dict'</span><span class="s2">])</span>
+<span class="s0">print</span><span class="s2">(</span><span class="s3">f&quot;Loaded model from iteration </span><span class="s1">{</span><span class="s0">checkpoint</span><span class="s2">[</span><span class="s3">'iteration'</span><span class="s2">]</span><span class="s1">}</span><span class="s3">&quot;</span><span class="s2">)</span>
+<span class="s0">print</span><span class="s2">(</span><span class="s3">f&quot;Val Loss: </span><span class="s1">{</span><span class="s0">checkpoint</span><span class="s2">[</span><span class="s3">'val_loss'</span><span class="s2">]</span><span class="s1">:</span><span class="s3">.4f</span><span class="s1">}</span><span class="s3">, Val EPE: </span><span class="s1">{</span><span class="s0">checkpoint</span><span class="s2">[</span><span class="s3">'val_epe'</span><span class="s2">]</span><span class="s1">:</span><span class="s3">.4f</span><span class="s1">}</span><span class="s3">&quot;</span><span class="s2">)</span>
+<span class="s0">device </span><span class="s2">= </span><span class="s0">torch</span><span class="s2">.</span><span class="s0">device</span><span class="s2">(</span><span class="s3">'cuda' </span><span class="s1">if </span><span class="s0">torch</span><span class="s2">.</span><span class="s0">cuda</span><span class="s2">.</span><span class="s0">is_available</span><span class="s2">() </span><span class="s1">else </span><span class="s3">'cpu'</span><span class="s2">)</span>
+<span class="s0">model </span><span class="s2">= </span><span class="s0">model</span><span class="s2">.</span><span class="s0">to</span><span class="s2">(</span><span class="s0">device</span><span class="s2">)</span>
+
+<span class="s4"># Visualize predictions</span>
+<span class="s0">visualize_flow_prediction</span><span class="s2">(</span><span class="s0">model</span><span class="s2">, </span><span class="s0">dataset</span><span class="s2">, </span><span class="s0">idx</span><span class="s2">=</span><span class="s0">random</span><span class="s2">.</span><span class="s0">randint</span><span class="s2">(</span><span class="s5">5</span><span class="s2">, </span><span class="s0">dataset</span><span class="s2">.</span><span class="s0">__len__</span><span class="s2">()), </span><span class="s0">device</span><span class="s2">=</span><span class="s0">device</span><span class="s2">)</span>
+<span class="s0">visualize_flow_prediction</span><span class="s2">(</span><span class="s0">model</span><span class="s2">, </span><span class="s0">dataset</span><span class="s2">, </span><span class="s0">idx</span><span class="s2">=</span><span class="s0">random</span><span class="s2">.</span><span class="s0">randint</span><span class="s2">(</span><span class="s5">5</span><span class="s2">, </span><span class="s0">dataset</span><span class="s2">.</span><span class="s0">__len__</span><span class="s2">()), </span><span class="s0">device</span><span class="s2">=</span><span class="s0">device</span><span class="s2">)</span>
+<span class="s0">visualize_flow_prediction</span><span class="s2">(</span><span class="s0">model</span><span class="s2">, </span><span class="s0">dataset</span><span class="s2">, </span><span class="s0">idx</span><span class="s2">=</span><span class="s0">random</span><span class="s2">.</span><span class="s0">randint</span><span class="s2">(</span><span class="s5">5</span><span class="s2">, </span><span class="s0">dataset</span><span class="s2">.</span><span class="s0">__len__</span><span class="s2">()), </span><span class="s0">device</span><span class="s2">=</span><span class="s0">device</span><span class="s2">)</span><hr class="ls0"><span class="s0">#%% 
+</span><span class="s1">def </span><span class="s0">plot_flow_data</span><span class="s2">(</span><span class="s0">img_data</span><span class="s2">, </span><span class="s0">flow_ref_data</span><span class="s2">, </span><span class="s0">flow_est_data</span><span class="s2">=</span><span class="s1">None</span><span class="s2">):</span>
+    <span class="s6">&quot;&quot;&quot; 
+    Izris slik in optičnih pretokov na različnih nivojih. 
+    &quot;&quot;&quot;</span>
+    <span class="s0">img_cur </span><span class="s2">= </span><span class="s0">img_data</span><span class="s2">[</span><span class="s5">0</span><span class="s2">, :</span><span class="s5">3</span><span class="s2">, :, :].</span><span class="s0">detach</span><span class="s2">().</span><span class="s0">cpu</span><span class="s2">().</span><span class="s0">numpy</span><span class="s2">().</span><span class="s0">transpose</span><span class="s2">(</span><span class="s5">1</span><span class="s2">, </span><span class="s5">2</span><span class="s2">, </span><span class="s5">0</span><span class="s2">)</span>
+    <span class="s0">img_next </span><span class="s2">= </span><span class="s0">img_data</span><span class="s2">[</span><span class="s5">0</span><span class="s2">, </span><span class="s5">3</span><span class="s2">:, :, :].</span><span class="s0">detach</span><span class="s2">().</span><span class="s0">cpu</span><span class="s2">().</span><span class="s0">numpy</span><span class="s2">().</span><span class="s0">transpose</span><span class="s2">(</span><span class="s5">1</span><span class="s2">, </span><span class="s5">2</span><span class="s2">, </span><span class="s5">0</span><span class="s2">)</span>
+
+    <span class="s4"># Izris slik</span>
+    <span class="s0">fig</span><span class="s2">, </span><span class="s0">ax </span><span class="s2">= </span><span class="s0">plt</span><span class="s2">.</span><span class="s0">subplots</span><span class="s2">(</span><span class="s5">1</span><span class="s2">, </span><span class="s5">2</span><span class="s2">, </span><span class="s0">figsize</span><span class="s2">=(</span><span class="s5">12</span><span class="s2">, </span><span class="s5">5</span><span class="s2">))</span>
+    <span class="s0">ax</span><span class="s2">[</span><span class="s5">0</span><span class="s2">].</span><span class="s0">imshow</span><span class="s2">(</span><span class="s0">img_cur</span><span class="s2">)</span>
+    <span class="s0">ax</span><span class="s2">[</span><span class="s5">0</span><span class="s2">].</span><span class="s0">set_axis_off</span><span class="s2">()</span>
+    <span class="s0">ax</span><span class="s2">[</span><span class="s5">0</span><span class="s2">].</span><span class="s0">set_title</span><span class="s2">(</span><span class="s3">'Trenutna slika'</span><span class="s2">)</span>
+    <span class="s0">ax</span><span class="s2">[</span><span class="s5">1</span><span class="s2">].</span><span class="s0">imshow</span><span class="s2">(</span><span class="s0">img_next</span><span class="s2">)</span>
+    <span class="s0">ax</span><span class="s2">[</span><span class="s5">1</span><span class="s2">].</span><span class="s0">set_title</span><span class="s2">(</span><span class="s3">'Naslednja slika'</span><span class="s2">)</span>
+    <span class="s0">ax</span><span class="s2">[</span><span class="s5">1</span><span class="s2">].</span><span class="s0">set_axis_off</span><span class="s2">()</span>
+    <span class="s0">plt</span><span class="s2">.</span><span class="s0">tight_layout</span><span class="s2">()</span>
+    <span class="s0">plt</span><span class="s2">.</span><span class="s0">show</span><span class="s2">()</span>
+
+    <span class="s4"># Pripravi podatke za izris</span>
+    <span class="s1">if </span><span class="s0">flow_est_data </span><span class="s1">is not None</span><span class="s2">:</span>
+        <span class="s0">n_rows </span><span class="s2">= </span><span class="s0">len</span><span class="s2">(</span><span class="s0">flow_ref_data</span><span class="s2">)</span>
+        <span class="s0">fig</span><span class="s2">, </span><span class="s0">ax </span><span class="s2">= </span><span class="s0">plt</span><span class="s2">.</span><span class="s0">subplots</span><span class="s2">(</span><span class="s0">n_rows</span><span class="s2">, </span><span class="s5">2</span><span class="s2">, </span><span class="s0">squeeze</span><span class="s2">=</span><span class="s1">False</span><span class="s2">, </span><span class="s0">figsize</span><span class="s2">=(</span><span class="s5">12</span><span class="s2">, </span><span class="s5">4 </span><span class="s2">* </span><span class="s0">n_rows</span><span class="s2">))</span>
+        <span class="s0">ax_data_pack </span><span class="s2">= [</span>
+            <span class="s2">(</span><span class="s0">ax</span><span class="s2">[:, </span><span class="s5">0</span><span class="s2">], </span><span class="s0">flow_ref_data</span><span class="s2">, </span><span class="s3">'Ground Truth'</span><span class="s2">),</span>
+            <span class="s2">(</span><span class="s0">ax</span><span class="s2">[:, </span><span class="s5">1</span><span class="s2">], </span><span class="s0">flow_est_data</span><span class="s2">, </span><span class="s3">'Predicted'</span><span class="s2">)</span>
+        <span class="s2">]</span>
+    <span class="s1">else</span><span class="s2">:</span>
+        <span class="s0">n_rows </span><span class="s2">= </span><span class="s0">len</span><span class="s2">(</span><span class="s0">flow_ref_data</span><span class="s2">)</span>
+        <span class="s0">fig</span><span class="s2">, </span><span class="s0">ax </span><span class="s2">= </span><span class="s0">plt</span><span class="s2">.</span><span class="s0">subplots</span><span class="s2">(</span><span class="s0">n_rows</span><span class="s2">, </span><span class="s5">1</span><span class="s2">, </span><span class="s0">squeeze</span><span class="s2">=</span><span class="s1">False</span><span class="s2">, </span><span class="s0">figsize</span><span class="s2">=(</span><span class="s5">6</span><span class="s2">, </span><span class="s5">4 </span><span class="s2">* </span><span class="s0">n_rows</span><span class="s2">))</span>
+        <span class="s0">ax_data_pack </span><span class="s2">= [(</span><span class="s0">ax</span><span class="s2">[:, </span><span class="s5">0</span><span class="s2">], </span><span class="s0">flow_ref_data</span><span class="s2">, </span><span class="s3">'Ground Truth'</span><span class="s2">)]</span>
+
+    <span class="s4"># Izris pretokov z 'nearest' interpolacijo</span>
+    <span class="s1">for </span><span class="s0">ax_list</span><span class="s2">, </span><span class="s0">flow_data</span><span class="s2">, </span><span class="s0">label </span><span class="s1">in </span><span class="s0">ax_data_pack</span><span class="s2">:</span>
+        <span class="s1">for </span><span class="s0">n</span><span class="s2">, </span><span class="s0">f_img </span><span class="s1">in </span><span class="s0">enumerate</span><span class="s2">(</span><span class="s0">flow_data</span><span class="s2">):</span>
+            <span class="s0">f_img_viz </span><span class="s2">= </span><span class="s0">torchvision</span><span class="s2">.</span><span class="s0">utils</span><span class="s2">.</span><span class="s0">flow_to_image</span><span class="s2">(</span><span class="s0">f_img</span><span class="s2">[</span><span class="s5">0</span><span class="s2">].</span><span class="s0">detach</span><span class="s2">().</span><span class="s0">cpu</span><span class="s2">())</span>
+            <span class="s0">f_img_viz </span><span class="s2">= </span><span class="s0">f_img_viz</span><span class="s2">.</span><span class="s0">numpy</span><span class="s2">().</span><span class="s0">transpose</span><span class="s2">(</span><span class="s5">1</span><span class="s2">, </span><span class="s5">2</span><span class="s2">, </span><span class="s5">0</span><span class="s2">)</span>
+
+            <span class="s4"># Ključno: interpolation='nearest' za blokast izgled</span>
+            <span class="s0">ax_list</span><span class="s2">[</span><span class="s0">n</span><span class="s2">].</span><span class="s0">imshow</span><span class="s2">(</span><span class="s0">f_img_viz</span><span class="s2">, </span><span class="s0">interpolation</span><span class="s2">=</span><span class="s3">'nearest'</span><span class="s2">)</span>
+            <span class="s0">ax_list</span><span class="s2">[</span><span class="s0">n</span><span class="s2">].</span><span class="s0">set_axis_off</span><span class="s2">()</span>
+
+            <span class="s0">h</span><span class="s2">, </span><span class="s0">w </span><span class="s2">= </span><span class="s0">f_img_viz</span><span class="s2">.</span><span class="s0">shape</span><span class="s2">[:</span><span class="s5">2</span><span class="s2">]</span>
+            <span class="s0">level </span><span class="s2">= </span><span class="s0">len</span><span class="s2">(</span><span class="s0">flow_data</span><span class="s2">) - </span><span class="s0">n</span>
+            <span class="s0">ax_list</span><span class="s2">[</span><span class="s0">n</span><span class="s2">].</span><span class="s0">set_title</span><span class="s2">(</span><span class="s3">f'</span><span class="s1">{</span><span class="s0">label</span><span class="s1">} </span><span class="s3">- nivo </span><span class="s1">{</span><span class="s0">level</span><span class="s1">}</span><span class="s3">, ločljivost (</span><span class="s1">{</span><span class="s0">h</span><span class="s1">}</span><span class="s3">, </span><span class="s1">{</span><span class="s0">w</span><span class="s1">}</span><span class="s3">)'</span><span class="s2">)</span>
+
+    <span class="s0">plt</span><span class="s2">.</span><span class="s0">tight_layout</span><span class="s2">()</span>
+    <span class="s0">plt</span><span class="s2">.</span><span class="s0">show</span><span class="s2">()</span><hr class="ls0"><span class="s0">#%% 
+</span><span class="s4"># Število random vzorcev za izris</span>
+<span class="s0">n_samples </span><span class="s2">= </span><span class="s5">2</span>
+
+<span class="s1">for </span><span class="s0">i </span><span class="s1">in </span><span class="s0">range</span><span class="s2">(</span><span class="s0">n_samples</span><span class="s2">):</span>
+    <span class="s4"># Pridobi random indeks</span>
+    <span class="s0">random_idx </span><span class="s2">= </span><span class="s0">random</span><span class="s2">.</span><span class="s0">randint</span><span class="s2">(</span><span class="s5">0</span><span class="s2">, </span><span class="s0">len</span><span class="s2">(</span><span class="s0">dataset</span><span class="s2">) - </span><span class="s5">1</span><span class="s2">)</span>
+    <span class="s0">print</span><span class="s2">(</span><span class="s3">f&quot;</span><span class="s1">\n{</span><span class="s3">'=' </span><span class="s2">* </span><span class="s5">60</span><span class="s1">}</span><span class="s3">&quot;</span><span class="s2">)</span>
+    <span class="s0">print</span><span class="s2">(</span><span class="s3">f&quot;Sample </span><span class="s1">{</span><span class="s0">i </span><span class="s2">+ </span><span class="s5">1</span><span class="s1">}</span><span class="s3">/</span><span class="s1">{</span><span class="s0">n_samples</span><span class="s1">} </span><span class="s3">(dataset index: </span><span class="s1">{</span><span class="s0">random_idx</span><span class="s1">}</span><span class="s3">)&quot;</span><span class="s2">)</span>
+    <span class="s0">print</span><span class="s2">(</span><span class="s3">f&quot;</span><span class="s1">{</span><span class="s3">'=' </span><span class="s2">* </span><span class="s5">60</span><span class="s1">}</span><span class="s3">&quot;</span><span class="s2">)</span>
+
+    <span class="s4"># Naloži podatke</span>
+    <span class="s0">img_pair</span><span class="s2">, </span><span class="s0">flow_gt </span><span class="s2">= </span><span class="s0">dataset</span><span class="s2">[</span><span class="s0">random_idx</span><span class="s2">]</span>
+    <span class="s0">img_pair </span><span class="s2">= </span><span class="s0">img_pair</span><span class="s2">.</span><span class="s0">unsqueeze</span><span class="s2">(</span><span class="s5">0</span><span class="s2">).</span><span class="s0">to</span><span class="s2">(</span><span class="s0">device</span><span class="s2">)</span>
+    <span class="s0">flow_gt </span><span class="s2">= </span><span class="s0">flow_gt</span><span class="s2">.</span><span class="s0">unsqueeze</span><span class="s2">(</span><span class="s5">0</span><span class="s2">).</span><span class="s0">to</span><span class="s2">(</span><span class="s0">device</span><span class="s2">)</span>
+
+    <span class="s4"># Napoved</span>
+    <span class="s0">model</span><span class="s2">.</span><span class="s0">eval</span><span class="s2">()</span>
+    <span class="s1">with </span><span class="s0">torch</span><span class="s2">.</span><span class="s0">no_grad</span><span class="s2">():</span>
+        <span class="s0">flow1</span><span class="s2">, </span><span class="s0">flow2</span><span class="s2">, </span><span class="s0">flow3</span><span class="s2">, </span><span class="s0">flow4 </span><span class="s2">= </span><span class="s0">model</span><span class="s2">(</span><span class="s0">img_pair</span><span class="s2">)</span>
+
+    <span class="s4"># Pripravi GT na različnih nivojih (z area pooling)</span>
+    <span class="s0">h</span><span class="s2">, </span><span class="s0">w </span><span class="s2">= </span><span class="s0">flow_gt</span><span class="s2">.</span><span class="s0">shape</span><span class="s2">[</span><span class="s5">2</span><span class="s2">:]</span>
+    <span class="s0">flow_gt_2 </span><span class="s2">= </span><span class="s0">F</span><span class="s2">.</span><span class="s0">interpolate</span><span class="s2">(</span><span class="s0">flow_gt</span><span class="s2">, </span><span class="s0">size</span><span class="s2">=(</span><span class="s0">h </span><span class="s2">// </span><span class="s5">2</span><span class="s2">, </span><span class="s0">w </span><span class="s2">// </span><span class="s5">2</span><span class="s2">), </span><span class="s0">mode</span><span class="s2">=</span><span class="s3">'area'</span><span class="s2">)</span>
+    <span class="s0">flow_gt_3 </span><span class="s2">= </span><span class="s0">F</span><span class="s2">.</span><span class="s0">interpolate</span><span class="s2">(</span><span class="s0">flow_gt</span><span class="s2">, </span><span class="s0">size</span><span class="s2">=(</span><span class="s0">h </span><span class="s2">// </span><span class="s5">4</span><span class="s2">, </span><span class="s0">w </span><span class="s2">// </span><span class="s5">4</span><span class="s2">), </span><span class="s0">mode</span><span class="s2">=</span><span class="s3">'area'</span><span class="s2">)</span>
+    <span class="s0">flow_gt_4 </span><span class="s2">= </span><span class="s0">F</span><span class="s2">.</span><span class="s0">interpolate</span><span class="s2">(</span><span class="s0">flow_gt</span><span class="s2">, </span><span class="s0">size</span><span class="s2">=(</span><span class="s0">h </span><span class="s2">// </span><span class="s5">8</span><span class="s2">, </span><span class="s0">w </span><span class="s2">// </span><span class="s5">8</span><span class="s2">), </span><span class="s0">mode</span><span class="s2">=</span><span class="s3">'area'</span><span class="s2">)</span>
+
+    <span class="s0">flow_gts </span><span class="s2">= [</span><span class="s0">flow_gt</span><span class="s2">, </span><span class="s0">flow_gt_2</span><span class="s2">, </span><span class="s0">flow_gt_3</span><span class="s2">, </span><span class="s0">flow_gt_4</span><span class="s2">]</span>
+    <span class="s0">flow_preds </span><span class="s2">= [</span><span class="s0">flow1</span><span class="s2">, </span><span class="s0">flow2</span><span class="s2">, </span><span class="s0">flow3</span><span class="s2">, </span><span class="s0">flow4</span><span class="s2">]</span>
+
+    <span class="s4"># Izris</span>
+    <span class="s0">plot_flow_data</span><span class="s2">(</span><span class="s0">img_pair</span><span class="s2">, </span><span class="s0">flow_gts</span><span class="s2">, </span><span class="s0">flow_preds</span><span class="s2">)</span><hr class="ls0"><span class="s0">#%% 
+</span><span class="s1">import </span><span class="s0">torchinfo</span>
+
+<span class="s4"># Cell: Load best model and visualize</span>
+<span class="s0">device </span><span class="s2">= </span><span class="s0">torch</span><span class="s2">.</span><span class="s0">device</span><span class="s2">(</span><span class="s3">'cuda' </span><span class="s1">if </span><span class="s0">torch</span><span class="s2">.</span><span class="s0">cuda</span><span class="s2">.</span><span class="s0">is_available</span><span class="s2">() </span><span class="s1">else </span><span class="s3">'cpu'</span><span class="s2">)</span>
+<span class="s0">model </span><span class="s2">= </span><span class="s0">FlowNet</span><span class="s2">().</span><span class="s0">to</span><span class="s2">(</span><span class="s0">device</span><span class="s2">)</span>
+
+<span class="s4"># checkpoint_dir = Path('./checkpoints')</span>
+<span class="s4"># best_model_path = checkpoint_dir / 'best_flownet_model.pth'</span>
+<span class="s4"># checkpoint = torch.load(best_model_path, map_location=device)</span>
+<span class="s4"># model.load_state_dict(checkpoint['model_state_dict'])</span>
+<span class="s4"># print(f&quot;Loaded model from iteration {checkpoint['iteration']}&quot;)</span>
+<span class="s4"># print(f&quot;Val Loss: {checkpoint['val_loss']:.4f}, Val EPE: {checkpoint['val_epe']:.4f}&quot;)</span>
+<span class="s0">device </span><span class="s2">= </span><span class="s0">torch</span><span class="s2">.</span><span class="s0">device</span><span class="s2">(</span><span class="s3">'cuda' </span><span class="s1">if </span><span class="s0">torch</span><span class="s2">.</span><span class="s0">cuda</span><span class="s2">.</span><span class="s0">is_available</span><span class="s2">() </span><span class="s1">else </span><span class="s3">'cpu'</span><span class="s2">)</span>
+<span class="s0">model </span><span class="s2">= </span><span class="s0">model</span><span class="s2">.</span><span class="s0">to</span><span class="s2">(</span><span class="s0">device</span><span class="s2">)</span>
+
+<span class="s0">torchinfo</span><span class="s2">.</span><span class="s0">summary</span><span class="s2">(</span><span class="s0">model</span><span class="s2">, </span><span class="s0">depth</span><span class="s2">=</span><span class="s5">4</span><span class="s2">)</span>
+<hr class="ls0"><span class="s0">#%% md 
+# TESTING ON MPI-SINTEL <hr class="ls0">#%% 
+</span><span class="s1">import </span><span class="s0">cv2</span>
+<span class="s1">from </span><span class="s0">tqdm </span><span class="s1">import </span><span class="s0">tqdm</span>
+<span class="s1">import </span><span class="s0">pandas </span><span class="s1">as </span><span class="s0">pd</span>
+<span class="s1">import </span><span class="s0">torch</span>
+<span class="s1">import </span><span class="s0">numpy </span><span class="s1">as </span><span class="s0">np</span>
+<span class="s1">import </span><span class="s0">matplotlib</span><span class="s2">.</span><span class="s0">pyplot </span><span class="s1">as </span><span class="s0">plt</span>
+<span class="s1">from </span><span class="s0">pathlib </span><span class="s1">import </span><span class="s0">Path</span>
+<span class="s1">import </span><span class="s0">pickle</span>
+<span class="s1">import </span><span class="s0">json</span>
+
+
+<span class="s1">def </span><span class="s0">evaluate_model_on_sintel</span><span class="s2">(</span><span class="s0">model</span><span class="s2">, </span><span class="s0">dataset</span><span class="s2">, </span><span class="s0">device</span><span class="s2">=</span><span class="s3">'cuda'</span><span class="s2">, </span><span class="s0">max_samples</span><span class="s2">=</span><span class="s1">None</span><span class="s2">, </span><span class="s0">cache_file</span><span class="s2">=</span><span class="s1">None</span><span class="s2">):</span>
+    <span class="s6">&quot;&quot;&quot; 
+    Evaluate FlowNet on MPI Sintel dataset with checkpointing support 
+ 
+    Args: 
+        model: FlowNet model 
+        dataset: MPISintelDataset 
+        device: device to run on 
+        max_samples: limit number of samples (None = all) 
+        cache_file: path to save/load intermediate results (e.g., 'flownet_results.pkl') 
+ 
+    Returns: 
+        dict with EPE statistics 
+    &quot;&quot;&quot;</span>
+    <span class="s4"># Try to load cached results</span>
+    <span class="s1">if </span><span class="s0">cache_file </span><span class="s1">and </span><span class="s0">Path</span><span class="s2">(</span><span class="s0">cache_file</span><span class="s2">).</span><span class="s0">exists</span><span class="s2">():</span>
+        <span class="s0">print</span><span class="s2">(</span><span class="s3">f&quot;Loading cached results from </span><span class="s1">{</span><span class="s0">cache_file</span><span class="s1">}</span><span class="s3">&quot;</span><span class="s2">)</span>
+        <span class="s1">with </span><span class="s0">open</span><span class="s2">(</span><span class="s0">cache_file</span><span class="s2">, </span><span class="s3">'rb'</span><span class="s2">) </span><span class="s1">as </span><span class="s0">f</span><span class="s2">:</span>
+            <span class="s0">cached_data </span><span class="s2">= </span><span class="s0">pickle</span><span class="s2">.</span><span class="s0">load</span><span class="s2">(</span><span class="s0">f</span><span class="s2">)</span>
+        <span class="s0">print</span><span class="s2">(</span><span class="s3">f&quot;Loaded </span><span class="s1">{</span><span class="s0">len</span><span class="s2">(</span><span class="s0">cached_data</span><span class="s2">[</span><span class="s3">'all_epes'</span><span class="s2">])</span><span class="s1">} </span><span class="s3">cached EPE values&quot;</span><span class="s2">)</span>
+        <span class="s1">return </span><span class="s0">cached_data</span>
+
+    <span class="s0">model</span><span class="s2">.</span><span class="s0">eval</span><span class="s2">()</span>
+    <span class="s0">model </span><span class="s2">= </span><span class="s0">model</span><span class="s2">.</span><span class="s0">to</span><span class="s2">(</span><span class="s0">device</span><span class="s2">)</span>
+
+    <span class="s0">epes </span><span class="s2">= []</span>
+    <span class="s0">n_samples </span><span class="s2">= </span><span class="s0">len</span><span class="s2">(</span><span class="s0">dataset</span><span class="s2">) </span><span class="s1">if </span><span class="s0">max_samples </span><span class="s1">is None else </span><span class="s0">min</span><span class="s2">(</span><span class="s0">max_samples</span><span class="s2">, </span><span class="s0">len</span><span class="s2">(</span><span class="s0">dataset</span><span class="s2">))</span>
+
+    <span class="s1">with </span><span class="s0">torch</span><span class="s2">.</span><span class="s0">no_grad</span><span class="s2">():</span>
+        <span class="s1">for </span><span class="s0">idx </span><span class="s1">in </span><span class="s0">tqdm</span><span class="s2">(</span><span class="s0">range</span><span class="s2">(</span><span class="s0">n_samples</span><span class="s2">), </span><span class="s0">desc</span><span class="s2">=</span><span class="s3">&quot;Evaluating FlowNet&quot;</span><span class="s2">):</span>
+            <span class="s0">img_pair</span><span class="s2">, </span><span class="s0">flow_gt </span><span class="s2">= </span><span class="s0">dataset</span><span class="s2">[</span><span class="s0">idx</span><span class="s2">]</span>
+
+            <span class="s4"># Add batch dimension</span>
+            <span class="s0">img_pair </span><span class="s2">= </span><span class="s0">img_pair</span><span class="s2">.</span><span class="s0">unsqueeze</span><span class="s2">(</span><span class="s5">0</span><span class="s2">).</span><span class="s0">to</span><span class="s2">(</span><span class="s0">device</span><span class="s2">)</span>
+            <span class="s0">flow_gt </span><span class="s2">= </span><span class="s0">flow_gt</span><span class="s2">.</span><span class="s0">to</span><span class="s2">(</span><span class="s0">device</span><span class="s2">)</span>
+
+            <span class="s4"># Predict</span>
+            <span class="s0">flow_preds </span><span class="s2">= </span><span class="s0">model</span><span class="s2">(</span><span class="s0">img_pair</span><span class="s2">)</span>
+            <span class="s0">flow_pred </span><span class="s2">= </span><span class="s0">flow_preds</span><span class="s2">[</span><span class="s5">0</span><span class="s2">]  </span><span class="s4"># Full resolution</span>
+            <span class="s0">flow_pred </span><span class="s2">= </span><span class="s0">flow_pred</span><span class="s2">.</span><span class="s0">squeeze</span><span class="s2">(</span><span class="s5">0</span><span class="s2">)  </span><span class="s4"># Remove batch dimension</span>
+
+            <span class="s4"># Compute EPE</span>
+            <span class="s0">epe </span><span class="s2">= </span><span class="s0">torch</span><span class="s2">.</span><span class="s0">norm</span><span class="s2">(</span><span class="s0">flow_pred </span><span class="s2">- </span><span class="s0">flow_gt</span><span class="s2">, </span><span class="s0">p</span><span class="s2">=</span><span class="s5">2</span><span class="s2">, </span><span class="s0">dim</span><span class="s2">=</span><span class="s5">0</span><span class="s2">).</span><span class="s0">mean</span><span class="s2">().</span><span class="s0">item</span><span class="s2">()</span>
+            <span class="s0">epes</span><span class="s2">.</span><span class="s0">append</span><span class="s2">(</span><span class="s0">epe</span><span class="s2">)</span>
+
+    <span class="s0">results </span><span class="s2">= {</span>
+        <span class="s3">'mean_epe'</span><span class="s2">: </span><span class="s0">np</span><span class="s2">.</span><span class="s0">mean</span><span class="s2">(</span><span class="s0">epes</span><span class="s2">),</span>
+        <span class="s3">'median_epe'</span><span class="s2">: </span><span class="s0">np</span><span class="s2">.</span><span class="s0">median</span><span class="s2">(</span><span class="s0">epes</span><span class="s2">),</span>
+        <span class="s3">'std_epe'</span><span class="s2">: </span><span class="s0">np</span><span class="s2">.</span><span class="s0">std</span><span class="s2">(</span><span class="s0">epes</span><span class="s2">),</span>
+        <span class="s3">'min_epe'</span><span class="s2">: </span><span class="s0">np</span><span class="s2">.</span><span class="s0">min</span><span class="s2">(</span><span class="s0">epes</span><span class="s2">),</span>
+        <span class="s3">'max_epe'</span><span class="s2">: </span><span class="s0">np</span><span class="s2">.</span><span class="s0">max</span><span class="s2">(</span><span class="s0">epes</span><span class="s2">),</span>
+        <span class="s3">'all_epes'</span><span class="s2">: </span><span class="s0">epes</span>
+    <span class="s2">}</span>
+
+    <span class="s4"># Save results to cache</span>
+    <span class="s1">if </span><span class="s0">cache_file</span><span class="s2">:</span>
+        <span class="s0">Path</span><span class="s2">(</span><span class="s0">cache_file</span><span class="s2">).</span><span class="s0">parent</span><span class="s2">.</span><span class="s0">mkdir</span><span class="s2">(</span><span class="s0">parents</span><span class="s2">=</span><span class="s1">True</span><span class="s2">, </span><span class="s0">exist_ok</span><span class="s2">=</span><span class="s1">True</span><span class="s2">)</span>
+        <span class="s1">with </span><span class="s0">open</span><span class="s2">(</span><span class="s0">cache_file</span><span class="s2">, </span><span class="s3">'wb'</span><span class="s2">) </span><span class="s1">as </span><span class="s0">f</span><span class="s2">:</span>
+            <span class="s0">pickle</span><span class="s2">.</span><span class="s0">dump</span><span class="s2">(</span><span class="s0">results</span><span class="s2">, </span><span class="s0">f</span><span class="s2">)</span>
+        <span class="s0">print</span><span class="s2">(</span><span class="s3">f&quot;Results saved to </span><span class="s1">{</span><span class="s0">cache_file</span><span class="s1">}</span><span class="s3">&quot;</span><span class="s2">)</span>
+
+    <span class="s1">return </span><span class="s0">results</span>
+<hr class="ls0"><span class="s0">#%% 
+</span><span class="s1">def </span><span class="s0">evaluate_farneback_on_sintel</span><span class="s2">(</span><span class="s0">dataset</span><span class="s2">, </span><span class="s0">max_samples</span><span class="s2">=</span><span class="s1">None</span><span class="s2">,</span>
+                                 <span class="s0">pyr_scale</span><span class="s2">=</span><span class="s5">0.5</span><span class="s2">, </span><span class="s0">levels</span><span class="s2">=</span><span class="s5">3</span><span class="s2">, </span><span class="s0">winsize</span><span class="s2">=</span><span class="s5">15</span><span class="s2">,</span>
+                                 <span class="s0">iterations</span><span class="s2">=</span><span class="s5">3</span><span class="s2">, </span><span class="s0">poly_n</span><span class="s2">=</span><span class="s5">5</span><span class="s2">, </span><span class="s0">poly_sigma</span><span class="s2">=</span><span class="s5">1.2</span><span class="s2">,</span>
+                                 <span class="s0">cache_file</span><span class="s2">=</span><span class="s1">None</span><span class="s2">):</span>
+    <span class="s6">&quot;&quot;&quot; 
+    Evaluate Farneback optical flow on MPI Sintel with checkpointing support 
+ 
+    Args: 
+        dataset: MPISintelDataset 
+        max_samples: limit number of samples 
+        pyr_scale: pyramid scale (&lt;1) 
+        levels: number of pyramid levels 
+        winsize: averaging window size 
+        iterations: number of iterations at each level 
+        poly_n: size of pixel neighborhood (5 or 7) 
+        poly_sigma: standard deviation of Gaussian for polynomial expansion 
+        cache_file: path to save/load intermediate results (e.g., 'farneback_default.pkl') 
+ 
+    Returns: 
+        dict with EPE statistics 
+    &quot;&quot;&quot;</span>
+    <span class="s4"># Try to load cached results</span>
+    <span class="s1">if </span><span class="s0">cache_file </span><span class="s1">and </span><span class="s0">Path</span><span class="s2">(</span><span class="s0">cache_file</span><span class="s2">).</span><span class="s0">exists</span><span class="s2">():</span>
+        <span class="s0">print</span><span class="s2">(</span><span class="s3">f&quot;Loading cached results from </span><span class="s1">{</span><span class="s0">cache_file</span><span class="s1">}</span><span class="s3">&quot;</span><span class="s2">)</span>
+        <span class="s1">with </span><span class="s0">open</span><span class="s2">(</span><span class="s0">cache_file</span><span class="s2">, </span><span class="s3">'rb'</span><span class="s2">) </span><span class="s1">as </span><span class="s0">f</span><span class="s2">:</span>
+            <span class="s0">cached_data </span><span class="s2">= </span><span class="s0">pickle</span><span class="s2">.</span><span class="s0">load</span><span class="s2">(</span><span class="s0">f</span><span class="s2">)</span>
+        <span class="s0">print</span><span class="s2">(</span><span class="s3">f&quot;Loaded </span><span class="s1">{</span><span class="s0">len</span><span class="s2">(</span><span class="s0">cached_data</span><span class="s2">[</span><span class="s3">'all_epes'</span><span class="s2">])</span><span class="s1">} </span><span class="s3">cached EPE values&quot;</span><span class="s2">)</span>
+        <span class="s1">return </span><span class="s0">cached_data</span>
+
+    <span class="s0">epes </span><span class="s2">= []</span>
+    <span class="s0">n_samples </span><span class="s2">= </span><span class="s0">len</span><span class="s2">(</span><span class="s0">dataset</span><span class="s2">) </span><span class="s1">if </span><span class="s0">max_samples </span><span class="s1">is None else </span><span class="s0">min</span><span class="s2">(</span><span class="s0">max_samples</span><span class="s2">, </span><span class="s0">len</span><span class="s2">(</span><span class="s0">dataset</span><span class="s2">))</span>
+
+    <span class="s1">for </span><span class="s0">idx </span><span class="s1">in </span><span class="s0">tqdm</span><span class="s2">(</span><span class="s0">range</span><span class="s2">(</span><span class="s0">n_samples</span><span class="s2">), </span><span class="s0">desc</span><span class="s2">=</span><span class="s3">&quot;Evaluating Farneback&quot;</span><span class="s2">):</span>
+        <span class="s0">img_pair</span><span class="s2">, </span><span class="s0">flow_gt </span><span class="s2">= </span><span class="s0">dataset</span><span class="s2">[</span><span class="s0">idx</span><span class="s2">]</span>
+
+        <span class="s4"># Split images and convert to grayscale</span>
+        <span class="s0">img1 </span><span class="s2">= </span><span class="s0">img_pair</span><span class="s2">[:</span><span class="s5">3</span><span class="s2">].</span><span class="s0">permute</span><span class="s2">(</span><span class="s5">1</span><span class="s2">, </span><span class="s5">2</span><span class="s2">, </span><span class="s5">0</span><span class="s2">).</span><span class="s0">cpu</span><span class="s2">().</span><span class="s0">numpy</span><span class="s2">()</span>
+        <span class="s0">img2 </span><span class="s2">= </span><span class="s0">img_pair</span><span class="s2">[</span><span class="s5">3</span><span class="s2">:].</span><span class="s0">permute</span><span class="s2">(</span><span class="s5">1</span><span class="s2">, </span><span class="s5">2</span><span class="s2">, </span><span class="s5">0</span><span class="s2">).</span><span class="s0">cpu</span><span class="s2">().</span><span class="s0">numpy</span><span class="s2">()</span>
+
+        <span class="s0">gray1 </span><span class="s2">= </span><span class="s0">cv2</span><span class="s2">.</span><span class="s0">cvtColor</span><span class="s2">((</span><span class="s0">img1 </span><span class="s2">* </span><span class="s5">255</span><span class="s2">).</span><span class="s0">astype</span><span class="s2">(</span><span class="s0">np</span><span class="s2">.</span><span class="s0">uint8</span><span class="s2">), </span><span class="s0">cv2</span><span class="s2">.</span><span class="s0">COLOR_RGB2GRAY</span><span class="s2">)</span>
+        <span class="s0">gray2 </span><span class="s2">= </span><span class="s0">cv2</span><span class="s2">.</span><span class="s0">cvtColor</span><span class="s2">((</span><span class="s0">img2 </span><span class="s2">* </span><span class="s5">255</span><span class="s2">).</span><span class="s0">astype</span><span class="s2">(</span><span class="s0">np</span><span class="s2">.</span><span class="s0">uint8</span><span class="s2">), </span><span class="s0">cv2</span><span class="s2">.</span><span class="s0">COLOR_RGB2GRAY</span><span class="s2">)</span>
+
+        <span class="s4"># Compute flow</span>
+        <span class="s0">flow_pred </span><span class="s2">= </span><span class="s0">cv2</span><span class="s2">.</span><span class="s0">calcOpticalFlowFarneback</span><span class="s2">(</span>
+            <span class="s0">gray1</span><span class="s2">, </span><span class="s0">gray2</span><span class="s2">, </span><span class="s1">None</span><span class="s2">,</span>
+            <span class="s0">pyr_scale</span><span class="s2">=</span><span class="s0">pyr_scale</span><span class="s2">,</span>
+            <span class="s0">levels</span><span class="s2">=</span><span class="s0">levels</span><span class="s2">,</span>
+            <span class="s0">winsize</span><span class="s2">=</span><span class="s0">winsize</span><span class="s2">,</span>
+            <span class="s0">iterations</span><span class="s2">=</span><span class="s0">iterations</span><span class="s2">,</span>
+            <span class="s0">poly_n</span><span class="s2">=</span><span class="s0">poly_n</span><span class="s2">,</span>
+            <span class="s0">poly_sigma</span><span class="s2">=</span><span class="s0">poly_sigma</span><span class="s2">,</span>
+            <span class="s0">flags</span><span class="s2">=</span><span class="s5">0</span>
+        <span class="s2">)</span>
+
+        <span class="s4"># Convert to torch and compute EPE</span>
+        <span class="s0">flow_pred </span><span class="s2">= </span><span class="s0">torch</span><span class="s2">.</span><span class="s0">from_numpy</span><span class="s2">(</span><span class="s0">flow_pred</span><span class="s2">).</span><span class="s0">permute</span><span class="s2">(</span><span class="s5">2</span><span class="s2">, </span><span class="s5">0</span><span class="s2">, </span><span class="s5">1</span><span class="s2">).</span><span class="s0">float</span><span class="s2">()</span>
+
+        <span class="s0">epe </span><span class="s2">= </span><span class="s0">torch</span><span class="s2">.</span><span class="s0">norm</span><span class="s2">(</span><span class="s0">flow_pred </span><span class="s2">- </span><span class="s0">flow_gt</span><span class="s2">, </span><span class="s0">p</span><span class="s2">=</span><span class="s5">2</span><span class="s2">, </span><span class="s0">dim</span><span class="s2">=</span><span class="s5">0</span><span class="s2">).</span><span class="s0">mean</span><span class="s2">().</span><span class="s0">item</span><span class="s2">()</span>
+        <span class="s0">epes</span><span class="s2">.</span><span class="s0">append</span><span class="s2">(</span><span class="s0">epe</span><span class="s2">)</span>
+
+    <span class="s0">results </span><span class="s2">= {</span>
+        <span class="s3">'mean_epe'</span><span class="s2">: </span><span class="s0">np</span><span class="s2">.</span><span class="s0">mean</span><span class="s2">(</span><span class="s0">epes</span><span class="s2">),</span>
+        <span class="s3">'median_epe'</span><span class="s2">: </span><span class="s0">np</span><span class="s2">.</span><span class="s0">median</span><span class="s2">(</span><span class="s0">epes</span><span class="s2">),</span>
+        <span class="s3">'std_epe'</span><span class="s2">: </span><span class="s0">np</span><span class="s2">.</span><span class="s0">std</span><span class="s2">(</span><span class="s0">epes</span><span class="s2">),</span>
+        <span class="s3">'min_epe'</span><span class="s2">: </span><span class="s0">np</span><span class="s2">.</span><span class="s0">min</span><span class="s2">(</span><span class="s0">epes</span><span class="s2">),</span>
+        <span class="s3">'max_epe'</span><span class="s2">: </span><span class="s0">np</span><span class="s2">.</span><span class="s0">max</span><span class="s2">(</span><span class="s0">epes</span><span class="s2">),</span>
+        <span class="s3">'all_epes'</span><span class="s2">: </span><span class="s0">epes</span>
+    <span class="s2">}</span>
+
+    <span class="s4"># Save results to cache</span>
+    <span class="s1">if </span><span class="s0">cache_file</span><span class="s2">:</span>
+        <span class="s0">Path</span><span class="s2">(</span><span class="s0">cache_file</span><span class="s2">).</span><span class="s0">parent</span><span class="s2">.</span><span class="s0">mkdir</span><span class="s2">(</span><span class="s0">parents</span><span class="s2">=</span><span class="s1">True</span><span class="s2">, </span><span class="s0">exist_ok</span><span class="s2">=</span><span class="s1">True</span><span class="s2">)</span>
+        <span class="s1">with </span><span class="s0">open</span><span class="s2">(</span><span class="s0">cache_file</span><span class="s2">, </span><span class="s3">'wb'</span><span class="s2">) </span><span class="s1">as </span><span class="s0">f</span><span class="s2">:</span>
+            <span class="s0">pickle</span><span class="s2">.</span><span class="s0">dump</span><span class="s2">(</span><span class="s0">results</span><span class="s2">, </span><span class="s0">f</span><span class="s2">)</span>
+        <span class="s0">print</span><span class="s2">(</span><span class="s3">f&quot;Results saved to </span><span class="s1">{</span><span class="s0">cache_file</span><span class="s1">}</span><span class="s3">&quot;</span><span class="s2">)</span>
+
+    <span class="s1">return </span><span class="s0">results</span>
+<hr class="ls0"><span class="s0">#%% 
+sintel_root </span><span class="s2">= </span><span class="s3">r&quot;C:\Users\simon\Desktop\RV\Racunalniski-Vid\RV-N3\datasets\MPI-Sintel-complete&quot;</span>
+
+<span class="s0">sintel_dataset </span><span class="s2">= </span><span class="s0">MPISintelDataset</span><span class="s2">(</span>
+    <span class="s0">root</span><span class="s2">=</span><span class="s0">sintel_root</span><span class="s2">,</span>
+    <span class="s0">split</span><span class="s2">=</span><span class="s3">&quot;training&quot;</span><span class="s2">,</span>
+    <span class="s0">pass_name</span><span class="s2">=</span><span class="s3">&quot;clean&quot;</span><span class="s2">,</span>
+    <span class="s0">resize_to</span><span class="s2">=(</span><span class="s5">448</span><span class="s2">, </span><span class="s5">1024</span><span class="s2">)</span>
+<span class="s2">)</span>
+<span class="s0">print</span><span class="s2">(</span><span class="s3">f&quot;MPI Sintel training set size: </span><span class="s1">{</span><span class="s0">len</span><span class="s2">(</span><span class="s0">sintel_dataset</span><span class="s2">)</span><span class="s1">}</span><span class="s3">&quot;</span><span class="s2">)</span>
+<hr class="ls0"><span class="s0">#%% 
+</span><span class="s4"># Evaluate FlowNet</span>
+<span class="s0">device </span><span class="s2">= </span><span class="s0">torch</span><span class="s2">.</span><span class="s0">device</span><span class="s2">(</span><span class="s3">'cuda' </span><span class="s1">if </span><span class="s0">torch</span><span class="s2">.</span><span class="s0">cuda</span><span class="s2">.</span><span class="s0">is_available</span><span class="s2">() </span><span class="s1">else </span><span class="s3">'cpu'</span><span class="s2">)</span>
+
+<span class="s0">checkpoint_dir </span><span class="s2">= </span><span class="s0">Path</span><span class="s2">(</span><span class="s3">'./checkpoints'</span><span class="s2">)</span>
+<span class="s0">model </span><span class="s2">= </span><span class="s0">FlowNet</span><span class="s2">().</span><span class="s0">to</span><span class="s2">(</span><span class="s0">device</span><span class="s2">)</span>
+<span class="s0">best_model_path </span><span class="s2">= </span><span class="s0">checkpoint_dir </span><span class="s2">/ </span><span class="s3">'best_flownet_model.pth'</span>
+<span class="s0">checkpoint </span><span class="s2">= </span><span class="s0">torch</span><span class="s2">.</span><span class="s0">load</span><span class="s2">(</span><span class="s0">best_model_path</span><span class="s2">, </span><span class="s0">map_location</span><span class="s2">=</span><span class="s0">device</span><span class="s2">)</span>
+<span class="s0">model</span><span class="s2">.</span><span class="s0">load_state_dict</span><span class="s2">(</span><span class="s0">checkpoint</span><span class="s2">[</span><span class="s3">'model_state_dict'</span><span class="s2">])</span>
+
+<span class="s0">print</span><span class="s2">(</span><span class="s3">&quot;Evaluating FlowNet on MPI Sintel...&quot;</span><span class="s2">)</span>
+<span class="s0">flownet_results </span><span class="s2">= </span><span class="s0">evaluate_model_on_sintel</span><span class="s2">(</span>
+    <span class="s0">model</span><span class="s2">,</span>
+    <span class="s0">sintel_dataset</span><span class="s2">,</span>
+    <span class="s0">device</span><span class="s2">=</span><span class="s0">device</span><span class="s2">,</span>
+    <span class="s0">cache_file</span><span class="s2">=</span><span class="s3">'./checkpoints/flownet_sintel_results.pkl'</span>
+<span class="s2">)</span>
+
+<span class="s0">print</span><span class="s2">(</span><span class="s3">f&quot;</span><span class="s1">\n{</span><span class="s3">'=' </span><span class="s2">* </span><span class="s5">50</span><span class="s1">}</span><span class="s3">&quot;</span><span class="s2">)</span>
+<span class="s0">print</span><span class="s2">(</span><span class="s3">&quot;FlowNet Results on MPI Sintel:&quot;</span><span class="s2">)</span>
+<span class="s0">print</span><span class="s2">(</span><span class="s3">f&quot;</span><span class="s1">{</span><span class="s3">'=' </span><span class="s2">* </span><span class="s5">50</span><span class="s1">}</span><span class="s3">&quot;</span><span class="s2">)</span>
+<span class="s0">print</span><span class="s2">(</span><span class="s3">f&quot;Mean EPE: </span><span class="s1">{</span><span class="s0">flownet_results</span><span class="s2">[</span><span class="s3">'mean_epe'</span><span class="s2">]</span><span class="s1">:</span><span class="s3">.4f</span><span class="s1">} </span><span class="s3">pixels&quot;</span><span class="s2">)</span>
+<span class="s0">print</span><span class="s2">(</span><span class="s3">f&quot;Median EPE: </span><span class="s1">{</span><span class="s0">flownet_results</span><span class="s2">[</span><span class="s3">'median_epe'</span><span class="s2">]</span><span class="s1">:</span><span class="s3">.4f</span><span class="s1">} </span><span class="s3">pixels&quot;</span><span class="s2">)</span>
+<span class="s0">print</span><span class="s2">(</span><span class="s3">f&quot;Std EPE: </span><span class="s1">{</span><span class="s0">flownet_results</span><span class="s2">[</span><span class="s3">'std_epe'</span><span class="s2">]</span><span class="s1">:</span><span class="s3">.4f</span><span class="s1">} </span><span class="s3">pixels&quot;</span><span class="s2">)</span>
+<span class="s0">print</span><span class="s2">(</span><span class="s3">f&quot;Min EPE: </span><span class="s1">{</span><span class="s0">flownet_results</span><span class="s2">[</span><span class="s3">'min_epe'</span><span class="s2">]</span><span class="s1">:</span><span class="s3">.4f</span><span class="s1">} </span><span class="s3">pixels&quot;</span><span class="s2">)</span>
+<span class="s0">print</span><span class="s2">(</span><span class="s3">f&quot;Max EPE: </span><span class="s1">{</span><span class="s0">flownet_results</span><span class="s2">[</span><span class="s3">'max_epe'</span><span class="s2">]</span><span class="s1">:</span><span class="s3">.4f</span><span class="s1">} </span><span class="s3">pixels&quot;</span><span class="s2">)</span>
+<hr class="ls0"><span class="s0">#%% 
+</span><span class="s4"># Test different Farneback parameters</span>
+<span class="s0">print</span><span class="s2">(</span><span class="s3">&quot;</span><span class="s1">\n</span><span class="s3">Testing Farneback with different parameters...&quot;</span><span class="s2">)</span>
+
+<span class="s0">farneback_configs </span><span class="s2">= [</span>
+    <span class="s4"># (pyr_scale, levels, winsize, iterations, poly_n, poly_sigma, name)</span>
+    <span class="s2">(</span><span class="s5">0.5</span><span class="s2">, </span><span class="s5">3</span><span class="s2">, </span><span class="s5">15</span><span class="s2">, </span><span class="s5">3</span><span class="s2">, </span><span class="s5">5</span><span class="s2">, </span><span class="s5">1.2</span><span class="s2">, </span><span class="s3">&quot;Default&quot;</span><span class="s2">),</span>
+    <span class="s2">(</span><span class="s5">0.5</span><span class="s2">, </span><span class="s5">5</span><span class="s2">, </span><span class="s5">15</span><span class="s2">, </span><span class="s5">3</span><span class="s2">, </span><span class="s5">5</span><span class="s2">, </span><span class="s5">1.2</span><span class="s2">, </span><span class="s3">&quot;More levels&quot;</span><span class="s2">),</span>
+    <span class="s2">(</span><span class="s5">0.5</span><span class="s2">, </span><span class="s5">3</span><span class="s2">, </span><span class="s5">21</span><span class="s2">, </span><span class="s5">5</span><span class="s2">, </span><span class="s5">7</span><span class="s2">, </span><span class="s5">1.5</span><span class="s2">, </span><span class="s3">&quot;Larger window&quot;</span><span class="s2">),</span>
+    <span class="s2">(</span><span class="s5">0.8</span><span class="s2">, </span><span class="s5">5</span><span class="s2">, </span><span class="s5">25</span><span class="s2">, </span><span class="s5">5</span><span class="s2">, </span><span class="s5">7</span><span class="s2">, </span><span class="s5">1.5</span><span class="s2">, </span><span class="s3">&quot;High quality&quot;</span><span class="s2">),</span>
+<span class="s2">]</span>
+
+<span class="s0">farneback_results </span><span class="s2">= {}</span>
+
+<span class="s1">for </span><span class="s0">pyr_scale</span><span class="s2">, </span><span class="s0">levels</span><span class="s2">, </span><span class="s0">winsize</span><span class="s2">, </span><span class="s0">iterations</span><span class="s2">, </span><span class="s0">poly_n</span><span class="s2">, </span><span class="s0">poly_sigma</span><span class="s2">, </span><span class="s0">name </span><span class="s1">in </span><span class="s0">farneback_configs</span><span class="s2">:</span>
+    <span class="s0">print</span><span class="s2">(</span><span class="s3">f&quot;</span><span class="s1">\n</span><span class="s3">Testing: </span><span class="s1">{</span><span class="s0">name</span><span class="s1">}</span><span class="s3">&quot;</span><span class="s2">)</span>
+    <span class="s4"># Create unique cache filename based on config</span>
+    <span class="s0">cache_filename </span><span class="s2">= </span><span class="s3">f&quot;./checkpoints/farneback_</span><span class="s1">{</span><span class="s0">name</span><span class="s2">.</span><span class="s0">lower</span><span class="s2">().</span><span class="s0">replace</span><span class="s2">(</span><span class="s3">' '</span><span class="s2">, </span><span class="s3">'_'</span><span class="s2">)</span><span class="s1">}</span><span class="s3">.pkl&quot;</span>
+
+    <span class="s0">results </span><span class="s2">= </span><span class="s0">evaluate_farneback_on_sintel</span><span class="s2">(</span>
+        <span class="s0">sintel_dataset</span><span class="s2">,</span>
+        <span class="s0">max_samples</span><span class="s2">=</span><span class="s1">None</span><span class="s2">,  </span><span class="s4"># Use all samples</span>
+        <span class="s0">pyr_scale</span><span class="s2">=</span><span class="s0">pyr_scale</span><span class="s2">,</span>
+        <span class="s0">levels</span><span class="s2">=</span><span class="s0">levels</span><span class="s2">,</span>
+        <span class="s0">winsize</span><span class="s2">=</span><span class="s0">winsize</span><span class="s2">,</span>
+        <span class="s0">iterations</span><span class="s2">=</span><span class="s0">iterations</span><span class="s2">,</span>
+        <span class="s0">poly_n</span><span class="s2">=</span><span class="s0">poly_n</span><span class="s2">,</span>
+        <span class="s0">poly_sigma</span><span class="s2">=</span><span class="s0">poly_sigma</span><span class="s2">,</span>
+        <span class="s0">cache_file</span><span class="s2">=</span><span class="s0">cache_filename</span>
+    <span class="s2">)</span>
+    <span class="s0">farneback_results</span><span class="s2">[</span><span class="s0">name</span><span class="s2">] = </span><span class="s0">results</span>
+
+    <span class="s0">print</span><span class="s2">(</span><span class="s3">f&quot;  Mean EPE: </span><span class="s1">{</span><span class="s0">results</span><span class="s2">[</span><span class="s3">'mean_epe'</span><span class="s2">]</span><span class="s1">:</span><span class="s3">.4f</span><span class="s1">} </span><span class="s3">pixels&quot;</span><span class="s2">)</span>
+    <span class="s0">print</span><span class="s2">(</span><span class="s3">f&quot;  Median EPE: </span><span class="s1">{</span><span class="s0">results</span><span class="s2">[</span><span class="s3">'median_epe'</span><span class="s2">]</span><span class="s1">:</span><span class="s3">.4f</span><span class="s1">} </span><span class="s3">pixels&quot;</span><span class="s2">)</span>
+<hr class="ls0"><span class="s0">#%% 
+</span><span class="s4"># Compare results</span>
+<span class="s0">print</span><span class="s2">(</span><span class="s3">f&quot;</span><span class="s1">\n{</span><span class="s3">'=' </span><span class="s2">* </span><span class="s5">70</span><span class="s1">}</span><span class="s3">&quot;</span><span class="s2">)</span>
+<span class="s0">print</span><span class="s2">(</span><span class="s3">&quot;COMPARISON: FlowNet vs Farneback on MPI Sintel&quot;</span><span class="s2">)</span>
+<span class="s0">print</span><span class="s2">(</span><span class="s3">f&quot;</span><span class="s1">{</span><span class="s3">'=' </span><span class="s2">* </span><span class="s5">70</span><span class="s1">}</span><span class="s3">&quot;</span><span class="s2">)</span>
+
+<span class="s0">comparison_data </span><span class="s2">= []</span>
+
+<span class="s4"># Add FlowNet</span>
+<span class="s0">comparison_data</span><span class="s2">.</span><span class="s0">append</span><span class="s2">({</span>
+    <span class="s3">'Method'</span><span class="s2">: </span><span class="s3">'FlowNet'</span><span class="s2">,</span>
+    <span class="s3">'Mean EPE'</span><span class="s2">: </span><span class="s0">flownet_results</span><span class="s2">[</span><span class="s3">'mean_epe'</span><span class="s2">],</span>
+    <span class="s3">'Median EPE'</span><span class="s2">: </span><span class="s0">flownet_results</span><span class="s2">[</span><span class="s3">'median_epe'</span><span class="s2">],</span>
+    <span class="s3">'Std EPE'</span><span class="s2">: </span><span class="s0">flownet_results</span><span class="s2">[</span><span class="s3">'std_epe'</span><span class="s2">]</span>
+<span class="s2">})</span>
+
+<span class="s4"># Add Farneback configs</span>
+<span class="s1">for </span><span class="s0">name</span><span class="s2">, </span><span class="s0">results </span><span class="s1">in </span><span class="s0">farneback_results</span><span class="s2">.</span><span class="s0">items</span><span class="s2">():</span>
+    <span class="s0">comparison_data</span><span class="s2">.</span><span class="s0">append</span><span class="s2">({</span>
+        <span class="s3">'Method'</span><span class="s2">: </span><span class="s3">f'Farneback (</span><span class="s1">{</span><span class="s0">name</span><span class="s1">}</span><span class="s3">)'</span><span class="s2">,</span>
+        <span class="s3">'Mean EPE'</span><span class="s2">: </span><span class="s0">results</span><span class="s2">[</span><span class="s3">'mean_epe'</span><span class="s2">],</span>
+        <span class="s3">'Median EPE'</span><span class="s2">: </span><span class="s0">results</span><span class="s2">[</span><span class="s3">'median_epe'</span><span class="s2">],</span>
+        <span class="s3">'Std EPE'</span><span class="s2">: </span><span class="s0">results</span><span class="s2">[</span><span class="s3">'std_epe'</span><span class="s2">]</span>
+    <span class="s2">})</span>
+
+<span class="s0">df </span><span class="s2">= </span><span class="s0">pd</span><span class="s2">.</span><span class="s0">DataFrame</span><span class="s2">(</span><span class="s0">comparison_data</span><span class="s2">)</span>
+<span class="s0">print</span><span class="s2">(</span><span class="s0">df</span><span class="s2">.</span><span class="s0">to_string</span><span class="s2">(</span><span class="s0">index</span><span class="s2">=</span><span class="s1">False</span><span class="s2">))</span>
+<hr class="ls0"><span class="s0">#%% 
+</span><span class="s4"># Visualize comparison</span>
+<span class="s0">fig</span><span class="s2">, </span><span class="s0">axes </span><span class="s2">= </span><span class="s0">plt</span><span class="s2">.</span><span class="s0">subplots</span><span class="s2">(</span><span class="s5">1</span><span class="s2">, </span><span class="s5">2</span><span class="s2">, </span><span class="s0">figsize</span><span class="s2">=(</span><span class="s5">14</span><span class="s2">, </span><span class="s5">5</span><span class="s2">))</span>
+
+<span class="s0">methods </span><span class="s2">= [</span><span class="s3">'FlowNet'</span><span class="s2">] + [</span><span class="s3">f'FB_</span><span class="s1">{</span><span class="s0">name</span><span class="s1">}</span><span class="s3">' </span><span class="s1">for </span><span class="s0">name </span><span class="s1">in </span><span class="s0">farneback_results</span><span class="s2">.</span><span class="s0">keys</span><span class="s2">()]</span>
+<span class="s0">mean_epes </span><span class="s2">= [</span><span class="s0">flownet_results</span><span class="s2">[</span><span class="s3">'mean_epe'</span><span class="s2">]] + [</span><span class="s0">r</span><span class="s2">[</span><span class="s3">'mean_epe'</span><span class="s2">] </span><span class="s1">for </span><span class="s0">r </span><span class="s1">in </span><span class="s0">farneback_results</span><span class="s2">.</span><span class="s0">values</span><span class="s2">()]</span>
+<span class="s0">median_epes </span><span class="s2">= [</span><span class="s0">flownet_results</span><span class="s2">[</span><span class="s3">'median_epe'</span><span class="s2">]] + [</span><span class="s0">r</span><span class="s2">[</span><span class="s3">'median_epe'</span><span class="s2">] </span><span class="s1">for </span><span class="s0">r </span><span class="s1">in </span><span class="s0">farneback_results</span><span class="s2">.</span><span class="s0">values</span><span class="s2">()]</span>
+
+<span class="s0">x </span><span class="s2">= </span><span class="s0">np</span><span class="s2">.</span><span class="s0">arange</span><span class="s2">(</span><span class="s0">len</span><span class="s2">(</span><span class="s0">methods</span><span class="s2">))</span>
+<span class="s0">width </span><span class="s2">= </span><span class="s5">0.35</span>
+
+<span class="s0">axes</span><span class="s2">[</span><span class="s5">0</span><span class="s2">].</span><span class="s0">bar</span><span class="s2">(</span><span class="s0">x </span><span class="s2">- </span><span class="s0">width </span><span class="s2">/ </span><span class="s5">2</span><span class="s2">, </span><span class="s0">mean_epes</span><span class="s2">, </span><span class="s0">width</span><span class="s2">, </span><span class="s0">label</span><span class="s2">=</span><span class="s3">'Mean EPE'</span><span class="s2">, </span><span class="s0">alpha</span><span class="s2">=</span><span class="s5">0.8</span><span class="s2">)</span>
+<span class="s0">axes</span><span class="s2">[</span><span class="s5">0</span><span class="s2">].</span><span class="s0">bar</span><span class="s2">(</span><span class="s0">x </span><span class="s2">+ </span><span class="s0">width </span><span class="s2">/ </span><span class="s5">2</span><span class="s2">, </span><span class="s0">median_epes</span><span class="s2">, </span><span class="s0">width</span><span class="s2">, </span><span class="s0">label</span><span class="s2">=</span><span class="s3">'Median EPE'</span><span class="s2">, </span><span class="s0">alpha</span><span class="s2">=</span><span class="s5">0.8</span><span class="s2">)</span>
+<span class="s0">axes</span><span class="s2">[</span><span class="s5">0</span><span class="s2">].</span><span class="s0">set_ylabel</span><span class="s2">(</span><span class="s3">'EPE (pixels)'</span><span class="s2">)</span>
+<span class="s0">axes</span><span class="s2">[</span><span class="s5">0</span><span class="s2">].</span><span class="s0">set_title</span><span class="s2">(</span><span class="s3">'Endpoint Error Comparison'</span><span class="s2">)</span>
+<span class="s0">axes</span><span class="s2">[</span><span class="s5">0</span><span class="s2">].</span><span class="s0">set_xticks</span><span class="s2">(</span><span class="s0">x</span><span class="s2">)</span>
+<span class="s0">axes</span><span class="s2">[</span><span class="s5">0</span><span class="s2">].</span><span class="s0">set_xticklabels</span><span class="s2">(</span><span class="s0">methods</span><span class="s2">, </span><span class="s0">rotation</span><span class="s2">=</span><span class="s5">45</span><span class="s2">, </span><span class="s0">ha</span><span class="s2">=</span><span class="s3">'right'</span><span class="s2">)</span>
+<span class="s0">axes</span><span class="s2">[</span><span class="s5">0</span><span class="s2">].</span><span class="s0">legend</span><span class="s2">()</span>
+<span class="s0">axes</span><span class="s2">[</span><span class="s5">0</span><span class="s2">].</span><span class="s0">grid</span><span class="s2">(</span><span class="s0">axis</span><span class="s2">=</span><span class="s3">'y'</span><span class="s2">, </span><span class="s0">alpha</span><span class="s2">=</span><span class="s5">0.3</span><span class="s2">)</span>
+
+<span class="s4"># Box plot</span>
+<span class="s0">all_epes </span><span class="s2">= [</span><span class="s0">flownet_results</span><span class="s2">[</span><span class="s3">'all_epes'</span><span class="s2">]] + [</span><span class="s0">r</span><span class="s2">[</span><span class="s3">'all_epes'</span><span class="s2">] </span><span class="s1">for </span><span class="s0">r </span><span class="s1">in </span><span class="s0">farneback_results</span><span class="s2">.</span><span class="s0">values</span><span class="s2">()]</span>
+<span class="s0">axes</span><span class="s2">[</span><span class="s5">1</span><span class="s2">].</span><span class="s0">boxplot</span><span class="s2">(</span><span class="s0">all_epes</span><span class="s2">, </span><span class="s0">labels</span><span class="s2">=</span><span class="s0">methods</span><span class="s2">)</span>
+<span class="s0">axes</span><span class="s2">[</span><span class="s5">1</span><span class="s2">].</span><span class="s0">set_ylabel</span><span class="s2">(</span><span class="s3">'EPE (pixels)'</span><span class="s2">)</span>
+<span class="s0">axes</span><span class="s2">[</span><span class="s5">1</span><span class="s2">].</span><span class="s0">set_title</span><span class="s2">(</span><span class="s3">'EPE Distribution'</span><span class="s2">)</span>
+<span class="s0">axes</span><span class="s2">[</span><span class="s5">1</span><span class="s2">].</span><span class="s0">set_xticklabels</span><span class="s2">(</span><span class="s0">methods</span><span class="s2">, </span><span class="s0">rotation</span><span class="s2">=</span><span class="s5">45</span><span class="s2">, </span><span class="s0">ha</span><span class="s2">=</span><span class="s3">'right'</span><span class="s2">)</span>
+<span class="s0">axes</span><span class="s2">[</span><span class="s5">1</span><span class="s2">].</span><span class="s0">grid</span><span class="s2">(</span><span class="s0">axis</span><span class="s2">=</span><span class="s3">'y'</span><span class="s2">, </span><span class="s0">alpha</span><span class="s2">=</span><span class="s5">0.3</span><span class="s2">)</span>
+
+<span class="s0">plt</span><span class="s2">.</span><span class="s0">tight_layout</span><span class="s2">()</span>
+<span class="s0">plt</span><span class="s2">.</span><span class="s0">show</span><span class="s2">()</span><hr class="ls0"><span class="s0">#%% 
+</span><span class="s1">def </span><span class="s0">process_video_with_optical_flow</span><span class="s2">(</span><span class="s0">video_path</span><span class="s2">, </span><span class="s0">model</span><span class="s2">, </span><span class="s0">output_path</span><span class="s2">):</span>
+    <span class="s0">cap </span><span class="s2">= </span><span class="s0">cv2</span><span class="s2">.</span><span class="s0">VideoCapture</span><span class="s2">(</span><span class="s0">str</span><span class="s2">(</span><span class="s0">video_path</span><span class="s2">))</span>
+    <span class="s0">fps </span><span class="s2">= </span><span class="s0">int</span><span class="s2">(</span><span class="s0">cap</span><span class="s2">.</span><span class="s0">get</span><span class="s2">(</span><span class="s0">cv2</span><span class="s2">.</span><span class="s0">CAP_PROP_FPS</span><span class="s2">))</span>
+    <span class="s0">width </span><span class="s2">= </span><span class="s0">int</span><span class="s2">(</span><span class="s0">cap</span><span class="s2">.</span><span class="s0">get</span><span class="s2">(</span><span class="s0">cv2</span><span class="s2">.</span><span class="s0">CAP_PROP_FRAME_WIDTH</span><span class="s2">))</span>
+    <span class="s0">height </span><span class="s2">= </span><span class="s0">int</span><span class="s2">(</span><span class="s0">cap</span><span class="s2">.</span><span class="s0">get</span><span class="s2">(</span><span class="s0">cv2</span><span class="s2">.</span><span class="s0">CAP_PROP_FRAME_HEIGHT</span><span class="s2">))</span>
+
+    <span class="s0">fourcc </span><span class="s2">= </span><span class="s0">cv2</span><span class="s2">.</span><span class="s0">VideoWriter_fourcc</span><span class="s2">(*</span><span class="s3">'mp4v'</span><span class="s2">)</span>
+    <span class="s0">out </span><span class="s2">= </span><span class="s0">cv2</span><span class="s2">.</span><span class="s0">VideoWriter</span><span class="s2">(</span><span class="s0">str</span><span class="s2">(</span><span class="s0">output_path</span><span class="s2">), </span><span class="s0">fourcc</span><span class="s2">, </span><span class="s0">fps</span><span class="s2">, (</span><span class="s0">width </span><span class="s2">* </span><span class="s5">2</span><span class="s2">, </span><span class="s0">height</span><span class="s2">))</span>
+
+    <span class="s0">ret</span><span class="s2">, </span><span class="s0">prev_frame </span><span class="s2">= </span><span class="s0">cap</span><span class="s2">.</span><span class="s0">read</span><span class="s2">()</span>
+    <span class="s1">if not </span><span class="s0">ret</span><span class="s2">:</span>
+        <span class="s1">return</span>
+
+    <span class="s0">device </span><span class="s2">= </span><span class="s0">next</span><span class="s2">(</span><span class="s0">model</span><span class="s2">.</span><span class="s0">parameters</span><span class="s2">()).</span><span class="s0">device</span>
+
+    <span class="s1">while True</span><span class="s2">:</span>
+        <span class="s0">ret</span><span class="s2">, </span><span class="s0">frame </span><span class="s2">= </span><span class="s0">cap</span><span class="s2">.</span><span class="s0">read</span><span class="s2">()</span>
+        <span class="s1">if not </span><span class="s0">ret</span><span class="s2">:</span>
+            <span class="s1">break</span>
+
+        <span class="s4"># Priprava inputa za model</span>
+        <span class="s0">img1 </span><span class="s2">= </span><span class="s0">torch</span><span class="s2">.</span><span class="s0">from_numpy</span><span class="s2">(</span><span class="s0">prev_frame</span><span class="s2">).</span><span class="s0">permute</span><span class="s2">(</span><span class="s5">2</span><span class="s2">, </span><span class="s5">0</span><span class="s2">, </span><span class="s5">1</span><span class="s2">).</span><span class="s0">float</span><span class="s2">() / </span><span class="s5">255.0</span>
+        <span class="s0">img2 </span><span class="s2">= </span><span class="s0">torch</span><span class="s2">.</span><span class="s0">from_numpy</span><span class="s2">(</span><span class="s0">frame</span><span class="s2">).</span><span class="s0">permute</span><span class="s2">(</span><span class="s5">2</span><span class="s2">, </span><span class="s5">0</span><span class="s2">, </span><span class="s5">1</span><span class="s2">).</span><span class="s0">float</span><span class="s2">() / </span><span class="s5">255.0</span>
+        <span class="s0">img_pair </span><span class="s2">= </span><span class="s0">torch</span><span class="s2">.</span><span class="s0">cat</span><span class="s2">([</span><span class="s0">img1</span><span class="s2">, </span><span class="s0">img2</span><span class="s2">], </span><span class="s0">dim</span><span class="s2">=</span><span class="s5">0</span><span class="s2">).</span><span class="s0">unsqueeze</span><span class="s2">(</span><span class="s5">0</span><span class="s2">).</span><span class="s0">to</span><span class="s2">(</span><span class="s0">device</span><span class="s2">)</span>
+
+        <span class="s4"># Napoved</span>
+        <span class="s1">with </span><span class="s0">torch</span><span class="s2">.</span><span class="s0">no_grad</span><span class="s2">():</span>
+            <span class="s0">flow1</span><span class="s2">, </span><span class="s0">_</span><span class="s2">, </span><span class="s0">_</span><span class="s2">, </span><span class="s0">_ </span><span class="s2">= </span><span class="s0">model</span><span class="s2">(</span><span class="s0">img_pair</span><span class="s2">)</span>
+
+        <span class="s4"># Pretvorba flow v numpy</span>
+        <span class="s0">flow </span><span class="s2">= </span><span class="s0">flow1</span><span class="s2">.</span><span class="s0">squeeze</span><span class="s2">(</span><span class="s5">0</span><span class="s2">).</span><span class="s0">cpu</span><span class="s2">().</span><span class="s0">numpy</span><span class="s2">().</span><span class="s0">transpose</span><span class="s2">(</span><span class="s5">1</span><span class="s2">, </span><span class="s5">2</span><span class="s2">, </span><span class="s5">0</span><span class="s2">)</span>
+
+        <span class="s4"># Vizualizacija</span>
+        <span class="s0">flow_rgb </span><span class="s2">= </span><span class="s0">visualize_optical_flow</span><span class="s2">(</span><span class="s0">flow</span><span class="s2">)</span>
+
+        <span class="s4"># Združitev</span>
+        <span class="s0">combined </span><span class="s2">= </span><span class="s0">np</span><span class="s2">.</span><span class="s0">hstack</span><span class="s2">([</span><span class="s0">frame</span><span class="s2">, </span><span class="s0">flow_rgb</span><span class="s2">])</span>
+        <span class="s0">out</span><span class="s2">.</span><span class="s0">write</span><span class="s2">(</span><span class="s0">combined</span><span class="s2">)</span>
+
+        <span class="s0">prev_frame </span><span class="s2">= </span><span class="s0">frame</span>
+
+    <span class="s0">cap</span><span class="s2">.</span><span class="s0">release</span><span class="s2">()</span>
+    <span class="s0">out</span><span class="s2">.</span><span class="s0">release</span><span class="s2">()</span>
+
+
+<span class="s1">def </span><span class="s0">visualize_optical_flow</span><span class="s2">(</span><span class="s0">flow</span><span class="s2">):</span>
+    <span class="s6">&quot;&quot;&quot; 
+    Vizualizira optični pretok s HSV barvnim prostorom. 
+    &quot;&quot;&quot;</span>
+    <span class="s0">h</span><span class="s2">, </span><span class="s0">w </span><span class="s2">= </span><span class="s0">flow</span><span class="s2">.</span><span class="s0">shape</span><span class="s2">[:</span><span class="s5">2</span><span class="s2">]</span>
+    <span class="s0">hsv </span><span class="s2">= </span><span class="s0">np</span><span class="s2">.</span><span class="s0">zeros</span><span class="s2">((</span><span class="s0">h</span><span class="s2">, </span><span class="s0">w</span><span class="s2">, </span><span class="s5">3</span><span class="s2">), </span><span class="s0">dtype</span><span class="s2">=</span><span class="s0">np</span><span class="s2">.</span><span class="s0">uint8</span><span class="s2">)</span>
+    <span class="s0">hsv</span><span class="s2">[..., </span><span class="s5">1</span><span class="s2">] = </span><span class="s5">255</span>
+
+    <span class="s0">mag</span><span class="s2">, </span><span class="s0">ang </span><span class="s2">= </span><span class="s0">cv2</span><span class="s2">.</span><span class="s0">cartToPolar</span><span class="s2">(</span><span class="s0">flow</span><span class="s2">[..., </span><span class="s5">0</span><span class="s2">], </span><span class="s0">flow</span><span class="s2">[..., </span><span class="s5">1</span><span class="s2">])</span>
+    <span class="s0">hsv</span><span class="s2">[..., </span><span class="s5">0</span><span class="s2">] = </span><span class="s0">ang </span><span class="s2">* </span><span class="s5">180 </span><span class="s2">/ </span><span class="s0">np</span><span class="s2">.</span><span class="s0">pi </span><span class="s2">/ </span><span class="s5">2</span>
+    <span class="s0">hsv</span><span class="s2">[..., </span><span class="s5">2</span><span class="s2">] = </span><span class="s0">cv2</span><span class="s2">.</span><span class="s0">normalize</span><span class="s2">(</span><span class="s0">mag</span><span class="s2">, </span><span class="s1">None</span><span class="s2">, </span><span class="s5">0</span><span class="s2">, </span><span class="s5">255</span><span class="s2">, </span><span class="s0">cv2</span><span class="s2">.</span><span class="s0">NORM_MINMAX</span><span class="s2">)</span>
+
+    <span class="s0">rgb </span><span class="s2">= </span><span class="s0">cv2</span><span class="s2">.</span><span class="s0">cvtColor</span><span class="s2">(</span><span class="s0">hsv</span><span class="s2">, </span><span class="s0">cv2</span><span class="s2">.</span><span class="s0">COLOR_HSV2BGR</span><span class="s2">)</span>
+    <span class="s1">return </span><span class="s0">rgb</span><hr class="ls0"><span class="s0">#%% 
+</span><span class="s1">def </span><span class="s0">create_presentation_video</span><span class="s2">(</span><span class="s0">video_path</span><span class="s2">, </span><span class="s0">model</span><span class="s2">, </span><span class="s0">output_path</span><span class="s2">):</span>
+    <span class="s6">&quot;&quot;&quot; 
+    Pripravi video za predstavitev z večimi vizualizacijami. 
+    &quot;&quot;&quot;</span>
+    <span class="s0">cap </span><span class="s2">= </span><span class="s0">cv2</span><span class="s2">.</span><span class="s0">VideoCapture</span><span class="s2">(</span><span class="s0">str</span><span class="s2">(</span><span class="s0">video_path</span><span class="s2">))</span>
+    <span class="s0">fps </span><span class="s2">= </span><span class="s0">int</span><span class="s2">(</span><span class="s0">cap</span><span class="s2">.</span><span class="s0">get</span><span class="s2">(</span><span class="s0">cv2</span><span class="s2">.</span><span class="s0">CAP_PROP_FPS</span><span class="s2">))</span>
+    <span class="s0">width </span><span class="s2">= </span><span class="s0">int</span><span class="s2">(</span><span class="s0">cap</span><span class="s2">.</span><span class="s0">get</span><span class="s2">(</span><span class="s0">cv2</span><span class="s2">.</span><span class="s0">CAP_PROP_FRAME_WIDTH</span><span class="s2">))</span>
+    <span class="s0">height </span><span class="s2">= </span><span class="s0">int</span><span class="s2">(</span><span class="s0">cap</span><span class="s2">.</span><span class="s0">get</span><span class="s2">(</span><span class="s0">cv2</span><span class="s2">.</span><span class="s0">CAP_PROP_FRAME_HEIGHT</span><span class="s2">))</span>
+
+    <span class="s0">fourcc </span><span class="s2">= </span><span class="s0">cv2</span><span class="s2">.</span><span class="s0">VideoWriter_fourcc</span><span class="s2">(*</span><span class="s3">'mp4v'</span><span class="s2">)</span>
+    <span class="s0">out </span><span class="s2">= </span><span class="s0">cv2</span><span class="s2">.</span><span class="s0">VideoWriter</span><span class="s2">(</span><span class="s0">str</span><span class="s2">(</span><span class="s0">output_path</span><span class="s2">), </span><span class="s0">fourcc</span><span class="s2">, </span><span class="s0">fps</span><span class="s2">, (</span><span class="s0">width </span><span class="s2">* </span><span class="s5">2</span><span class="s2">, </span><span class="s0">height </span><span class="s2">* </span><span class="s5">2</span><span class="s2">))</span>
+
+    <span class="s0">ret</span><span class="s2">, </span><span class="s0">prev_frame </span><span class="s2">= </span><span class="s0">cap</span><span class="s2">.</span><span class="s0">read</span><span class="s2">()</span>
+    <span class="s1">if not </span><span class="s0">ret</span><span class="s2">:</span>
+        <span class="s1">return</span>
+
+    <span class="s0">device </span><span class="s2">= </span><span class="s0">next</span><span class="s2">(</span><span class="s0">model</span><span class="s2">.</span><span class="s0">parameters</span><span class="s2">()).</span><span class="s0">device</span>
+
+    <span class="s1">while True</span><span class="s2">:</span>
+        <span class="s0">ret</span><span class="s2">, </span><span class="s0">frame </span><span class="s2">= </span><span class="s0">cap</span><span class="s2">.</span><span class="s0">read</span><span class="s2">()</span>
+        <span class="s1">if not </span><span class="s0">ret</span><span class="s2">:</span>
+            <span class="s1">break</span>
+
+        <span class="s4"># Priprava inputa za model</span>
+        <span class="s0">img1 </span><span class="s2">= </span><span class="s0">torch</span><span class="s2">.</span><span class="s0">from_numpy</span><span class="s2">(</span><span class="s0">prev_frame</span><span class="s2">).</span><span class="s0">permute</span><span class="s2">(</span><span class="s5">2</span><span class="s2">, </span><span class="s5">0</span><span class="s2">, </span><span class="s5">1</span><span class="s2">).</span><span class="s0">float</span><span class="s2">() / </span><span class="s5">255.0</span>
+        <span class="s0">img2 </span><span class="s2">= </span><span class="s0">torch</span><span class="s2">.</span><span class="s0">from_numpy</span><span class="s2">(</span><span class="s0">frame</span><span class="s2">).</span><span class="s0">permute</span><span class="s2">(</span><span class="s5">2</span><span class="s2">, </span><span class="s5">0</span><span class="s2">, </span><span class="s5">1</span><span class="s2">).</span><span class="s0">float</span><span class="s2">() / </span><span class="s5">255.0</span>
+        <span class="s0">img_pair </span><span class="s2">= </span><span class="s0">torch</span><span class="s2">.</span><span class="s0">cat</span><span class="s2">([</span><span class="s0">img1</span><span class="s2">, </span><span class="s0">img2</span><span class="s2">], </span><span class="s0">dim</span><span class="s2">=</span><span class="s5">0</span><span class="s2">).</span><span class="s0">unsqueeze</span><span class="s2">(</span><span class="s5">0</span><span class="s2">).</span><span class="s0">to</span><span class="s2">(</span><span class="s0">device</span><span class="s2">)</span>
+
+        <span class="s4"># Napoved</span>
+        <span class="s1">with </span><span class="s0">torch</span><span class="s2">.</span><span class="s0">no_grad</span><span class="s2">():</span>
+            <span class="s0">flow1</span><span class="s2">, </span><span class="s0">_</span><span class="s2">, </span><span class="s0">_</span><span class="s2">, </span><span class="s0">_ </span><span class="s2">= </span><span class="s0">model</span><span class="s2">(</span><span class="s0">img_pair</span><span class="s2">)</span>
+
+        <span class="s4"># Pretvorba flow v numpy (H×W×2)</span>
+        <span class="s0">flow </span><span class="s2">= </span><span class="s0">flow1</span><span class="s2">.</span><span class="s0">squeeze</span><span class="s2">(</span><span class="s5">0</span><span class="s2">).</span><span class="s0">cpu</span><span class="s2">().</span><span class="s0">numpy</span><span class="s2">().</span><span class="s0">transpose</span><span class="s2">(</span><span class="s5">1</span><span class="s2">, </span><span class="s5">2</span><span class="s2">, </span><span class="s5">0</span><span class="s2">)</span>
+
+        <span class="s4"># 4 pogledi: Original, Flow HSV, Magnitude, Direction</span>
+        <span class="s0">flow_hsv </span><span class="s2">= </span><span class="s0">visualize_optical_flow</span><span class="s2">(</span><span class="s0">flow</span><span class="s2">)</span>
+        <span class="s0">magnitude </span><span class="s2">= </span><span class="s0">visualize_magnitude</span><span class="s2">(</span><span class="s0">flow</span><span class="s2">)</span>
+        <span class="s0">direction </span><span class="s2">= </span><span class="s0">visualize_direction</span><span class="s2">(</span><span class="s0">flow</span><span class="s2">)</span>
+
+        <span class="s4"># Združitev v 2×2 mrežo</span>
+        <span class="s0">top </span><span class="s2">= </span><span class="s0">np</span><span class="s2">.</span><span class="s0">hstack</span><span class="s2">([</span><span class="s0">frame</span><span class="s2">, </span><span class="s0">flow_hsv</span><span class="s2">])</span>
+        <span class="s0">bottom </span><span class="s2">= </span><span class="s0">np</span><span class="s2">.</span><span class="s0">hstack</span><span class="s2">([</span><span class="s0">magnitude</span><span class="s2">, </span><span class="s0">direction</span><span class="s2">])</span>
+        <span class="s0">combined </span><span class="s2">= </span><span class="s0">np</span><span class="s2">.</span><span class="s0">vstack</span><span class="s2">([</span><span class="s0">top</span><span class="s2">, </span><span class="s0">bottom</span><span class="s2">])</span>
+
+        <span class="s0">out</span><span class="s2">.</span><span class="s0">write</span><span class="s2">(</span><span class="s0">combined</span><span class="s2">)</span>
+        <span class="s0">prev_frame </span><span class="s2">= </span><span class="s0">frame</span>
+
+    <span class="s0">cap</span><span class="s2">.</span><span class="s0">release</span><span class="s2">()</span>
+    <span class="s0">out</span><span class="s2">.</span><span class="s0">release</span><span class="s2">()</span>
+    <span class="s0">print</span><span class="s2">(</span><span class="s3">f&quot;Presentation video saved to: </span><span class="s1">{</span><span class="s0">output_path</span><span class="s1">}</span><span class="s3">&quot;</span><span class="s2">)</span>
+
+
+<span class="s1">def </span><span class="s0">visualize_optical_flow</span><span class="s2">(</span><span class="s0">flow</span><span class="s2">):</span>
+    <span class="s6">&quot;&quot;&quot; 
+    Vizualizira optični pretok s HSV barvnim prostorom. 
+    &quot;&quot;&quot;</span>
+    <span class="s0">h</span><span class="s2">, </span><span class="s0">w </span><span class="s2">= </span><span class="s0">flow</span><span class="s2">.</span><span class="s0">shape</span><span class="s2">[:</span><span class="s5">2</span><span class="s2">]</span>
+    <span class="s0">hsv </span><span class="s2">= </span><span class="s0">np</span><span class="s2">.</span><span class="s0">zeros</span><span class="s2">((</span><span class="s0">h</span><span class="s2">, </span><span class="s0">w</span><span class="s2">, </span><span class="s5">3</span><span class="s2">), </span><span class="s0">dtype</span><span class="s2">=</span><span class="s0">np</span><span class="s2">.</span><span class="s0">uint8</span><span class="s2">)</span>
+    <span class="s0">hsv</span><span class="s2">[..., </span><span class="s5">1</span><span class="s2">] = </span><span class="s5">255</span>
+
+    <span class="s0">mag</span><span class="s2">, </span><span class="s0">ang </span><span class="s2">= </span><span class="s0">cv2</span><span class="s2">.</span><span class="s0">cartToPolar</span><span class="s2">(</span><span class="s0">flow</span><span class="s2">[..., </span><span class="s5">0</span><span class="s2">], </span><span class="s0">flow</span><span class="s2">[..., </span><span class="s5">1</span><span class="s2">])</span>
+    <span class="s0">hsv</span><span class="s2">[..., </span><span class="s5">0</span><span class="s2">] = </span><span class="s0">ang </span><span class="s2">* </span><span class="s5">180 </span><span class="s2">/ </span><span class="s0">np</span><span class="s2">.</span><span class="s0">pi </span><span class="s2">/ </span><span class="s5">2</span>
+    <span class="s0">hsv</span><span class="s2">[..., </span><span class="s5">2</span><span class="s2">] = </span><span class="s0">cv2</span><span class="s2">.</span><span class="s0">normalize</span><span class="s2">(</span><span class="s0">mag</span><span class="s2">, </span><span class="s1">None</span><span class="s2">, </span><span class="s5">0</span><span class="s2">, </span><span class="s5">255</span><span class="s2">, </span><span class="s0">cv2</span><span class="s2">.</span><span class="s0">NORM_MINMAX</span><span class="s2">)</span>
+
+    <span class="s0">rgb </span><span class="s2">= </span><span class="s0">cv2</span><span class="s2">.</span><span class="s0">cvtColor</span><span class="s2">(</span><span class="s0">hsv</span><span class="s2">, </span><span class="s0">cv2</span><span class="s2">.</span><span class="s0">COLOR_HSV2BGR</span><span class="s2">)</span>
+    <span class="s1">return </span><span class="s0">rgb</span>
+
+
+<span class="s1">def </span><span class="s0">visualize_magnitude</span><span class="s2">(</span><span class="s0">flow</span><span class="s2">):</span>
+    <span class="s6">&quot;&quot;&quot;Vizualizira velikost optičnega pretoka.&quot;&quot;&quot;</span>
+    <span class="s0">mag</span><span class="s2">, </span><span class="s0">_ </span><span class="s2">= </span><span class="s0">cv2</span><span class="s2">.</span><span class="s0">cartToPolar</span><span class="s2">(</span><span class="s0">flow</span><span class="s2">[..., </span><span class="s5">0</span><span class="s2">], </span><span class="s0">flow</span><span class="s2">[..., </span><span class="s5">1</span><span class="s2">])</span>
+    <span class="s0">mag_norm </span><span class="s2">= </span><span class="s0">cv2</span><span class="s2">.</span><span class="s0">normalize</span><span class="s2">(</span><span class="s0">mag</span><span class="s2">, </span><span class="s1">None</span><span class="s2">, </span><span class="s5">0</span><span class="s2">, </span><span class="s5">255</span><span class="s2">, </span><span class="s0">cv2</span><span class="s2">.</span><span class="s0">NORM_MINMAX</span><span class="s2">).</span><span class="s0">astype</span><span class="s2">(</span><span class="s0">np</span><span class="s2">.</span><span class="s0">uint8</span><span class="s2">)</span>
+    <span class="s1">return </span><span class="s0">cv2</span><span class="s2">.</span><span class="s0">applyColorMap</span><span class="s2">(</span><span class="s0">mag_norm</span><span class="s2">, </span><span class="s0">cv2</span><span class="s2">.</span><span class="s0">COLORMAP_JET</span><span class="s2">)</span>
+
+
+<span class="s1">def </span><span class="s0">visualize_direction</span><span class="s2">(</span><span class="s0">flow</span><span class="s2">):</span>
+    <span class="s6">&quot;&quot;&quot;Vizualizira smer optičnega pretoka.&quot;&quot;&quot;</span>
+    <span class="s0">_</span><span class="s2">, </span><span class="s0">ang </span><span class="s2">= </span><span class="s0">cv2</span><span class="s2">.</span><span class="s0">cartToPolar</span><span class="s2">(</span><span class="s0">flow</span><span class="s2">[..., </span><span class="s5">0</span><span class="s2">], </span><span class="s0">flow</span><span class="s2">[..., </span><span class="s5">1</span><span class="s2">])</span>
+    <span class="s0">ang_norm </span><span class="s2">= (</span><span class="s0">ang </span><span class="s2">* </span><span class="s5">180 </span><span class="s2">/ </span><span class="s0">np</span><span class="s2">.</span><span class="s0">pi </span><span class="s2">/ </span><span class="s5">2</span><span class="s2">).</span><span class="s0">astype</span><span class="s2">(</span><span class="s0">np</span><span class="s2">.</span><span class="s0">uint8</span><span class="s2">)</span>
+    <span class="s1">return </span><span class="s0">cv2</span><span class="s2">.</span><span class="s0">applyColorMap</span><span class="s2">(</span><span class="s0">ang_norm</span><span class="s2">, </span><span class="s0">cv2</span><span class="s2">.</span><span class="s0">COLORMAP_HSV</span><span class="s2">)</span><hr class="ls0"><span class="s0">#%% 
+</span><span class="s4"># Za osnovno verzijo (original + optical flow)</span>
+<span class="s0">video_path </span><span class="s2">= </span><span class="s0">Path</span><span class="s2">(</span><span class="s3">'datasets/IMG_3122.mp4'</span><span class="s2">)</span>
+<span class="s0">output_path </span><span class="s2">= </span><span class="s0">Path</span><span class="s2">(</span><span class="s3">'outputs/output_visualization.mp4'</span><span class="s2">)</span>
+<span class="s0">output_path_2x2 </span><span class="s2">= </span><span class="s0">Path</span><span class="s2">(</span><span class="s3">'outputs/output_visualization_2x2.mp4'</span><span class="s2">)</span>
+
+<span class="s4"># process_video_with_optical_flow(video_path, model, output_path)</span>
+<span class="s0">create_presentation_video</span><span class="s2">(</span><span class="s0">video_path</span><span class="s2">, </span><span class="s0">model</span><span class="s2">, </span><span class="s0">output_path_2x2</span><span class="s2">)</span><hr class="ls0"><span class="s0">#%% 
+</span></pre>
+</body>
+</html>

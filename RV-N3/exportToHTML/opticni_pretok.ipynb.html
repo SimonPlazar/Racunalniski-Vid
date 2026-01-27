@@ -1,0 +1,546 @@
+<html>
+<head>
+<title>opticni_pretok.ipynb</title>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<style type="text/css">
+.s0 { color: #bcbec4;}
+.s1 { color: #cf8e6d;}
+.s2 { color: #bcbec4;}
+.s3 { color: #7a7e85;}
+.s4 { color: #6aab73;}
+.s5 { color: #2aacb8;}
+.s6 { color: #5f826b; font-style: italic;}
+.ls0 { height: 1px; border-width: 0; color: #43454a; background-color:#43454a}
+</style>
+</head>
+<body bgcolor="#1e1f22">
+<table CELLSPACING=0 CELLPADDING=5 COLS=1 WIDTH="100%" BGCOLOR="#606060" >
+<tr><td><center>
+<font face="Arial, Helvetica" color="#000000">
+opticni_pretok.ipynb</font>
+</center></td></tr></table>
+<pre><span class="s0">#%% 
+</span><span class="s1">from </span><span class="s0">pathlib </span><span class="s1">import </span><span class="s0">Path</span>
+<span class="s1">from </span><span class="s0">Helper </span><span class="s1">import </span><span class="s2">*</span>
+<span class="s1">import </span><span class="s0">matplotlib</span><span class="s2">.</span><span class="s0">pyplot </span><span class="s1">as </span><span class="s0">plt</span>
+<span class="s1">from </span><span class="s0">Model </span><span class="s1">import </span><span class="s0">FlowNet</span><span class="s2">, </span><span class="s0">MultiScaleEPE</span>
+<span class="s1">import </span><span class="s0">time</span>
+
+<span class="s1">import </span><span class="s0">IO</span>
+<span class="s1">from </span><span class="s0">torchvision </span><span class="s1">import </span><span class="s0">transforms</span>
+<span class="s1">from </span><span class="s0">torch</span><span class="s2">.</span><span class="s0">utils</span><span class="s2">.</span><span class="s0">data </span><span class="s1">import </span><span class="s0">DataLoader</span>
+
+<span class="s1">from </span><span class="s0">Model </span><span class="s1">import </span><span class="s0">FlyingChairsDataset</span>
+<hr class="ls0"><span class="s0">#%% 
+</span><span class="s3"># Cell: Training setup</span>
+<span class="s1">import </span><span class="s0">torch</span>
+<span class="s1">import </span><span class="s0">torch</span><span class="s2">.</span><span class="s0">nn </span><span class="s1">as </span><span class="s0">nn</span>
+<span class="s1">import </span><span class="s0">torch</span><span class="s2">.</span><span class="s0">optim </span><span class="s1">as </span><span class="s0">optim</span>
+
+<span class="s3"># Device configuration</span>
+<span class="s0">device </span><span class="s2">= </span><span class="s0">torch</span><span class="s2">.</span><span class="s0">device</span><span class="s2">(</span><span class="s4">'cuda' </span><span class="s1">if </span><span class="s0">torch</span><span class="s2">.</span><span class="s0">cuda</span><span class="s2">.</span><span class="s0">is_available</span><span class="s2">() </span><span class="s1">else </span><span class="s4">'cpu'</span><span class="s2">)</span>
+<span class="s0">print</span><span class="s2">(</span><span class="s4">f&quot;Using device: </span><span class="s1">{</span><span class="s0">device</span><span class="s1">}</span><span class="s4">&quot;</span><span class="s2">)</span>
+
+<span class="s0">transform </span><span class="s2">= </span><span class="s0">transforms</span><span class="s2">.</span><span class="s0">Compose</span><span class="s2">([</span>
+    <span class="s0">transforms</span><span class="s2">.</span><span class="s0">Resize</span><span class="s2">((</span><span class="s5">256</span><span class="s2">, </span><span class="s5">256</span><span class="s2">)),</span>
+    <span class="s0">transforms</span><span class="s2">.</span><span class="s0">ToTensor</span><span class="s2">()</span>
+<span class="s2">])</span>
+
+<span class="s0">root </span><span class="s2">= </span><span class="s4">r&quot;E:\datasets\FlyingChairs_release&quot;</span>
+<span class="s3"># batch_size = 20</span>
+<span class="s0">batch_size </span><span class="s2">= </span><span class="s5">8</span>
+
+<span class="s3"># Create datasets</span>
+<span class="s0">train_dataset </span><span class="s2">= </span><span class="s0">FlyingChairsDataset</span><span class="s2">(</span><span class="s0">root</span><span class="s2">=</span><span class="s0">root</span><span class="s2">, </span><span class="s0">split</span><span class="s2">=</span><span class="s4">&quot;train&quot;</span><span class="s2">, </span><span class="s0">transform</span><span class="s2">=</span><span class="s0">transform</span><span class="s2">)</span>
+<span class="s0">val_dataset </span><span class="s2">= </span><span class="s0">FlyingChairsDataset</span><span class="s2">(</span><span class="s0">root</span><span class="s2">=</span><span class="s0">root</span><span class="s2">, </span><span class="s0">split</span><span class="s2">=</span><span class="s4">&quot;val&quot;</span><span class="s2">, </span><span class="s0">transform</span><span class="s2">=</span><span class="s0">transform</span><span class="s2">)</span>
+
+<span class="s3"># Data loaders</span>
+<span class="s0">train_loader </span><span class="s2">= </span><span class="s0">DataLoader</span><span class="s2">(</span>
+    <span class="s0">train_dataset</span><span class="s2">,</span>
+    <span class="s0">batch_size</span><span class="s2">=</span><span class="s0">batch_size</span><span class="s2">,</span>
+    <span class="s0">shuffle</span><span class="s2">=</span><span class="s1">True</span><span class="s2">,</span>
+    <span class="s0">num_workers</span><span class="s2">=</span><span class="s5">0</span><span class="s2">,</span>
+    <span class="s0">pin_memory</span><span class="s2">=</span><span class="s1">True</span><span class="s2">,</span>
+<span class="s2">)</span>
+
+<span class="s0">val_loader </span><span class="s2">= </span><span class="s0">DataLoader</span><span class="s2">(</span>
+    <span class="s0">val_dataset</span><span class="s2">,</span>
+    <span class="s0">batch_size</span><span class="s2">=</span><span class="s0">batch_size</span><span class="s2">,</span>
+    <span class="s0">shuffle</span><span class="s2">=</span><span class="s1">False</span><span class="s2">,</span>
+    <span class="s0">num_workers</span><span class="s2">=</span><span class="s5">0</span><span class="s2">,</span>
+    <span class="s0">pin_memory</span><span class="s2">=</span><span class="s1">True</span><span class="s2">,</span>
+<span class="s2">)</span>
+
+<span class="s0">print</span><span class="s2">(</span><span class="s4">f&quot;Train samples: </span><span class="s1">{</span><span class="s0">len</span><span class="s2">(</span><span class="s0">train_dataset</span><span class="s2">)</span><span class="s1">}</span><span class="s4">&quot;</span><span class="s2">)</span>
+<span class="s0">print</span><span class="s2">(</span><span class="s4">f&quot;Val samples: </span><span class="s1">{</span><span class="s0">len</span><span class="s2">(</span><span class="s0">val_dataset</span><span class="s2">)</span><span class="s1">}</span><span class="s4">&quot;</span><span class="s2">)</span><hr class="ls0"><span class="s0">#%% 
+</span><span class="s3"># Cell: Iteration-based Training Loop</span>
+<span class="s3"># Initialize model</span>
+<span class="s0">model </span><span class="s2">= </span><span class="s0">FlowNet</span><span class="s2">().</span><span class="s0">to</span><span class="s2">(</span><span class="s0">device</span><span class="s2">)</span>
+<span class="s0">print</span><span class="s2">(</span><span class="s4">f&quot;Model parameters: </span><span class="s1">{</span><span class="s0">sum</span><span class="s2">(</span><span class="s0">p</span><span class="s2">.</span><span class="s0">numel</span><span class="s2">() </span><span class="s1">for </span><span class="s0">p </span><span class="s1">in </span><span class="s0">model</span><span class="s2">.</span><span class="s0">parameters</span><span class="s2">())</span><span class="s1">:</span><span class="s4">,</span><span class="s1">}</span><span class="s4">&quot;</span><span class="s2">)</span>
+
+<span class="s3"># Loss and optimizer</span>
+<span class="s0">criterion </span><span class="s2">= </span><span class="s0">MultiScaleEPE</span><span class="s2">(</span><span class="s0">weights</span><span class="s2">=(</span><span class="s5">1.0</span><span class="s2">, </span><span class="s5">0.5</span><span class="s2">, </span><span class="s5">0.25</span><span class="s2">, </span><span class="s5">0.125</span><span class="s2">))</span>
+<span class="s0">optimizer </span><span class="s2">= </span><span class="s0">optim</span><span class="s2">.</span><span class="s0">Adam</span><span class="s2">(</span><span class="s0">model</span><span class="s2">.</span><span class="s0">parameters</span><span class="s2">(), </span><span class="s0">lr</span><span class="s2">=</span><span class="s5">1e-4</span><span class="s2">)</span>
+
+<span class="s3"># Training configuration</span>
+<span class="s0">max_iterations </span><span class="s2">= </span><span class="s5">500_000</span>
+<span class="s0">val_interval </span><span class="s2">= </span><span class="s5">100</span>
+<span class="s0">save_interval </span><span class="s2">= </span><span class="s5">1000</span>
+<span class="s0">log_interval </span><span class="s2">= </span><span class="s5">16</span>
+
+
+<span class="s3"># Learning rate scheduler</span>
+<span class="s1">def </span><span class="s0">adjust_learning_rate</span><span class="s2">(</span><span class="s0">optimizer</span><span class="s2">, </span><span class="s0">iteration</span><span class="s2">):</span>
+    <span class="s1">if </span><span class="s0">iteration </span><span class="s2">&gt;= </span><span class="s5">200000</span><span class="s2">:</span>
+        <span class="s0">num_halvings </span><span class="s2">= (</span><span class="s0">iteration </span><span class="s2">- </span><span class="s5">200000</span><span class="s2">) // </span><span class="s5">100000 </span><span class="s2">+ </span><span class="s5">1</span>
+        <span class="s0">lr </span><span class="s2">= </span><span class="s5">1e-4 </span><span class="s2">/ (</span><span class="s5">2 </span><span class="s2">** </span><span class="s0">num_halvings</span><span class="s2">)</span>
+    <span class="s1">else</span><span class="s2">:</span>
+        <span class="s0">lr </span><span class="s2">= </span><span class="s5">1e-4</span>
+
+    <span class="s1">for </span><span class="s0">param_group </span><span class="s1">in </span><span class="s0">optimizer</span><span class="s2">.</span><span class="s0">param_groups</span><span class="s2">:</span>
+        <span class="s0">param_group</span><span class="s2">[</span><span class="s4">'lr'</span><span class="s2">] = </span><span class="s0">lr</span>
+    <span class="s1">return </span><span class="s0">lr</span>
+
+
+<span class="s3"># Setup checkpoint directory</span>
+<span class="s0">checkpoint_dir </span><span class="s2">= </span><span class="s0">Path</span><span class="s2">(</span><span class="s4">'./checkpoints'</span><span class="s2">)</span>
+<span class="s0">checkpoint_dir</span><span class="s2">.</span><span class="s0">mkdir</span><span class="s2">(</span><span class="s0">exist_ok</span><span class="s2">=</span><span class="s1">True</span><span class="s2">)</span>
+
+<span class="s3"># Load checkpoint if exists</span>
+<span class="s0">checkpoint </span><span class="s2">= </span><span class="s0">load_checkpoint_generic</span><span class="s2">(</span><span class="s0">checkpoint_dir</span><span class="s2">, </span><span class="s0">device</span><span class="s2">)</span>
+
+<span class="s3"># Initialize tracking variables (all as lists for full history)</span>
+<span class="s0">train_losses </span><span class="s2">= []</span>
+<span class="s0">val_losses </span><span class="s2">= []</span>
+<span class="s0">val_epes </span><span class="s2">= []</span>
+<span class="s0">iterations_log </span><span class="s2">= []</span>
+<span class="s0">val_epes_multiscale </span><span class="s2">= []</span>
+<span class="s0">start_iteration </span><span class="s2">= </span><span class="s5">1</span>
+
+<span class="s1">if </span><span class="s0">checkpoint</span><span class="s2">:</span>
+    <span class="s0">model</span><span class="s2">.</span><span class="s0">load_state_dict</span><span class="s2">(</span><span class="s0">checkpoint</span><span class="s2">[</span><span class="s4">'model_state_dict'</span><span class="s2">])</span>
+    <span class="s0">optimizer</span><span class="s2">.</span><span class="s0">load_state_dict</span><span class="s2">(</span><span class="s0">checkpoint</span><span class="s2">[</span><span class="s4">'optimizer_state_dict'</span><span class="s2">])</span>
+    <span class="s0">start_iteration </span><span class="s2">= </span><span class="s0">checkpoint</span><span class="s2">.</span><span class="s0">get</span><span class="s2">(</span><span class="s4">'iteration'</span><span class="s2">, </span><span class="s5">0</span><span class="s2">) + </span><span class="s5">1</span>
+    <span class="s0">train_losses </span><span class="s2">= </span><span class="s0">checkpoint</span><span class="s2">.</span><span class="s0">get</span><span class="s2">(</span><span class="s4">'train_losses'</span><span class="s2">, [])</span>
+    <span class="s0">val_losses </span><span class="s2">= </span><span class="s0">checkpoint</span><span class="s2">.</span><span class="s0">get</span><span class="s2">(</span><span class="s4">'val_losses'</span><span class="s2">, [])</span>
+    <span class="s0">val_epes </span><span class="s2">= </span><span class="s0">checkpoint</span><span class="s2">.</span><span class="s0">get</span><span class="s2">(</span><span class="s4">'val_epes'</span><span class="s2">, [])</span>
+    <span class="s0">iterations_log </span><span class="s2">= </span><span class="s0">checkpoint</span><span class="s2">.</span><span class="s0">get</span><span class="s2">(</span><span class="s4">'iterations_log'</span><span class="s2">, [])</span>
+    <span class="s0">val_epes_multiscale </span><span class="s2">= </span><span class="s0">checkpoint</span><span class="s2">.</span><span class="s0">get</span><span class="s2">(</span><span class="s4">'val_epes_multiscale'</span><span class="s2">, [])</span>
+    <span class="s0">print</span><span class="s2">(</span><span class="s4">f&quot;Resuming training from iteration </span><span class="s1">{</span><span class="s0">start_iteration</span><span class="s1">}</span><span class="s4">&quot;</span><span class="s2">)</span>
+    <span class="s0">print</span><span class="s2">(</span><span class="s4">f&quot;Loaded history: </span><span class="s1">{</span><span class="s0">len</span><span class="s2">(</span><span class="s0">val_losses</span><span class="s2">)</span><span class="s1">} </span><span class="s4">validation points&quot;</span><span class="s2">)</span>
+<span class="s1">else</span><span class="s2">:</span>
+    <span class="s0">print</span><span class="s2">(</span><span class="s4">&quot;No checkpoint found, starting fresh training.&quot;</span><span class="s2">)</span>
+
+<span class="s0">best_val_loss </span><span class="s2">= </span><span class="s0">checkpoint</span><span class="s2">.</span><span class="s0">get</span><span class="s2">(</span><span class="s4">'best_val_loss'</span><span class="s2">, </span><span class="s0">float</span><span class="s2">(</span><span class="s4">'inf'</span><span class="s2">)) </span><span class="s1">if </span><span class="s0">checkpoint </span><span class="s1">else </span><span class="s0">float</span><span class="s2">(</span><span class="s4">'inf'</span><span class="s2">)</span>
+<span class="s0">running_loss </span><span class="s2">= </span><span class="s5">0.0</span>
+
+<span class="s3"># Time tracking</span>
+<span class="s0">start_time </span><span class="s2">= </span><span class="s0">time</span><span class="s2">.</span><span class="s0">time</span><span class="s2">()</span>
+
+<span class="s0">model</span><span class="s2">.</span><span class="s0">train</span><span class="s2">()</span>
+<span class="s0">print</span><span class="s2">(</span><span class="s4">f&quot;</span><span class="s1">\n</span><span class="s4">Starting training from iteration </span><span class="s1">{</span><span class="s0">start_iteration</span><span class="s1">} </span><span class="s4">to </span><span class="s1">{</span><span class="s0">max_iterations</span><span class="s1">:</span><span class="s4">,</span><span class="s1">}</span><span class="s4">...&quot;</span><span class="s2">)</span>
+
+<span class="s0">iteration </span><span class="s2">= </span><span class="s0">start_iteration</span>
+
+<span class="s3"># Main training loop</span>
+<span class="s1">while </span><span class="s0">iteration </span><span class="s2">&lt;= </span><span class="s0">max_iterations</span><span class="s2">:</span>
+    <span class="s1">for </span><span class="s0">img_pair</span><span class="s2">, </span><span class="s0">flow_gt </span><span class="s1">in </span><span class="s0">train_loader</span><span class="s2">:</span>
+        <span class="s1">if </span><span class="s0">iteration </span><span class="s2">&gt; </span><span class="s0">max_iterations</span><span class="s2">:</span>
+            <span class="s1">break</span>
+
+        <span class="s3"># Move to device</span>
+        <span class="s0">img_pair </span><span class="s2">= </span><span class="s0">img_pair</span><span class="s2">.</span><span class="s0">to</span><span class="s2">(</span><span class="s0">device</span><span class="s2">, </span><span class="s0">non_blocking</span><span class="s2">=</span><span class="s1">True</span><span class="s2">)</span>
+        <span class="s0">flow_gt </span><span class="s2">= </span><span class="s0">flow_gt</span><span class="s2">.</span><span class="s0">to</span><span class="s2">(</span><span class="s0">device</span><span class="s2">, </span><span class="s0">non_blocking</span><span class="s2">=</span><span class="s1">True</span><span class="s2">)</span>
+
+        <span class="s3"># Forward pass</span>
+        <span class="s0">optimizer</span><span class="s2">.</span><span class="s0">zero_grad</span><span class="s2">()</span>
+        <span class="s0">flow_preds </span><span class="s2">= </span><span class="s0">model</span><span class="s2">(</span><span class="s0">img_pair</span><span class="s2">)</span>
+
+        <span class="s3"># Compute loss</span>
+        <span class="s0">loss</span><span class="s2">, </span><span class="s0">epe1</span><span class="s2">, </span><span class="s0">epe2</span><span class="s2">, </span><span class="s0">epe3</span><span class="s2">, </span><span class="s0">epe4 </span><span class="s2">= </span><span class="s0">criterion</span><span class="s2">(</span><span class="s0">flow_preds</span><span class="s2">, </span><span class="s0">flow_gt</span><span class="s2">)</span>
+
+        <span class="s3"># Backward pass</span>
+        <span class="s0">loss</span><span class="s2">.</span><span class="s0">backward</span><span class="s2">()</span>
+        <span class="s0">optimizer</span><span class="s2">.</span><span class="s0">step</span><span class="s2">()</span>
+
+        <span class="s0">running_loss </span><span class="s2">+= </span><span class="s0">loss</span><span class="s2">.</span><span class="s0">item</span><span class="s2">()</span>
+
+        <span class="s3"># Adjust learning rate</span>
+        <span class="s0">current_lr </span><span class="s2">= </span><span class="s0">adjust_learning_rate</span><span class="s2">(</span><span class="s0">optimizer</span><span class="s2">, </span><span class="s0">iteration</span><span class="s2">)</span>
+
+        <span class="s3"># Log progress</span>
+        <span class="s1">if </span><span class="s0">iteration </span><span class="s2">% </span><span class="s0">log_interval </span><span class="s2">== </span><span class="s5">0</span><span class="s2">:</span>
+            <span class="s0">elapsed </span><span class="s2">= </span><span class="s0">time</span><span class="s2">.</span><span class="s0">time</span><span class="s2">() - </span><span class="s0">start_time</span>
+            <span class="s0">avg_loss </span><span class="s2">= </span><span class="s0">running_loss </span><span class="s2">/ </span><span class="s0">log_interval</span>
+            <span class="s0">train_losses</span><span class="s2">.</span><span class="s0">append</span><span class="s2">(</span><span class="s0">avg_loss</span><span class="s2">)</span>
+            <span class="s0">print</span><span class="s2">(</span><span class="s4">f&quot;Iter </span><span class="s1">{</span><span class="s0">iteration</span><span class="s1">:</span><span class="s4">6d</span><span class="s1">}</span><span class="s4">/</span><span class="s1">{</span><span class="s0">max_iterations</span><span class="s1">:</span><span class="s4">6d</span><span class="s1">} </span><span class="s4">| Loss: </span><span class="s1">{</span><span class="s0">avg_loss</span><span class="s1">:</span><span class="s4">.4f</span><span class="s1">} </span><span class="s4">| Time: </span><span class="s1">{</span><span class="s0">elapsed</span><span class="s1">:</span><span class="s4">.2f</span><span class="s1">}</span><span class="s4">s&quot;</span><span class="s2">)</span>
+            <span class="s0">running_loss </span><span class="s2">= </span><span class="s5">0.0</span>
+            <span class="s0">start_time </span><span class="s2">= </span><span class="s0">time</span><span class="s2">.</span><span class="s0">time</span><span class="s2">()</span>
+
+        <span class="s3"># Validation</span>
+        <span class="s1">if </span><span class="s0">iteration </span><span class="s2">% </span><span class="s0">val_interval </span><span class="s2">== </span><span class="s5">0</span><span class="s2">:</span>
+            <span class="s0">model</span><span class="s2">.</span><span class="s0">eval</span><span class="s2">()</span>
+            <span class="s0">val_loss </span><span class="s2">= </span><span class="s5">0.0</span>
+            <span class="s0">val_epe1_sum </span><span class="s2">= </span><span class="s5">0.0</span>
+            <span class="s0">val_epe2_sum </span><span class="s2">= </span><span class="s5">0.0</span>
+            <span class="s0">val_epe3_sum </span><span class="s2">= </span><span class="s5">0.0</span>
+            <span class="s0">val_epe4_sum </span><span class="s2">= </span><span class="s5">0.0</span>
+
+            <span class="s1">with </span><span class="s0">torch</span><span class="s2">.</span><span class="s0">no_grad</span><span class="s2">():</span>
+                <span class="s1">for </span><span class="s0">img_pair_v</span><span class="s2">, </span><span class="s0">flow_gt_v </span><span class="s1">in </span><span class="s0">val_loader</span><span class="s2">:</span>
+                    <span class="s0">img_pair_v </span><span class="s2">= </span><span class="s0">img_pair_v</span><span class="s2">.</span><span class="s0">to</span><span class="s2">(</span><span class="s0">device</span><span class="s2">)</span>
+                    <span class="s0">flow_gt_v </span><span class="s2">= </span><span class="s0">flow_gt_v</span><span class="s2">.</span><span class="s0">to</span><span class="s2">(</span><span class="s0">device</span><span class="s2">)</span>
+
+                    <span class="s0">flow_preds_v </span><span class="s2">= </span><span class="s0">model</span><span class="s2">(</span><span class="s0">img_pair_v</span><span class="s2">)</span>
+
+                    <span class="s0">loss_v</span><span class="s2">, </span><span class="s0">epe1_v</span><span class="s2">, </span><span class="s0">epe2_v</span><span class="s2">, </span><span class="s0">epe3_v</span><span class="s2">, </span><span class="s0">epe4_v </span><span class="s2">= </span><span class="s0">criterion</span><span class="s2">(</span><span class="s0">flow_preds_v</span><span class="s2">, </span><span class="s0">flow_gt_v</span><span class="s2">)</span>
+
+                    <span class="s0">val_loss </span><span class="s2">+= </span><span class="s0">loss_v</span><span class="s2">.</span><span class="s0">item</span><span class="s2">()</span>
+                    <span class="s0">val_epe1_sum </span><span class="s2">+= </span><span class="s0">epe1_v</span><span class="s2">.</span><span class="s0">item</span><span class="s2">()</span>
+                    <span class="s0">val_epe2_sum </span><span class="s2">+= </span><span class="s0">epe2_v</span><span class="s2">.</span><span class="s0">item</span><span class="s2">()</span>
+                    <span class="s0">val_epe3_sum </span><span class="s2">+= </span><span class="s0">epe3_v</span><span class="s2">.</span><span class="s0">item</span><span class="s2">()</span>
+                    <span class="s0">val_epe4_sum </span><span class="s2">+= </span><span class="s0">epe4_v</span><span class="s2">.</span><span class="s0">item</span><span class="s2">()</span>
+
+            <span class="s3"># Average metrics</span>
+            <span class="s0">val_loss </span><span class="s2">/= </span><span class="s0">len</span><span class="s2">(</span><span class="s0">val_loader</span><span class="s2">)</span>
+            <span class="s0">val_epe1 </span><span class="s2">= </span><span class="s0">val_epe1_sum </span><span class="s2">/ </span><span class="s0">len</span><span class="s2">(</span><span class="s0">val_loader</span><span class="s2">)</span>
+            <span class="s0">val_epe2 </span><span class="s2">= </span><span class="s0">val_epe2_sum </span><span class="s2">/ </span><span class="s0">len</span><span class="s2">(</span><span class="s0">val_loader</span><span class="s2">)</span>
+            <span class="s0">val_epe3 </span><span class="s2">= </span><span class="s0">val_epe3_sum </span><span class="s2">/ </span><span class="s0">len</span><span class="s2">(</span><span class="s0">val_loader</span><span class="s2">)</span>
+            <span class="s0">val_epe4 </span><span class="s2">= </span><span class="s0">val_epe4_sum </span><span class="s2">/ </span><span class="s0">len</span><span class="s2">(</span><span class="s0">val_loader</span><span class="s2">)</span>
+
+            <span class="s0">val_losses</span><span class="s2">.</span><span class="s0">append</span><span class="s2">(</span><span class="s0">val_loss</span><span class="s2">)</span>
+            <span class="s0">val_epes</span><span class="s2">.</span><span class="s0">append</span><span class="s2">(</span><span class="s0">val_epe1</span><span class="s2">)</span>
+            <span class="s0">iterations_log</span><span class="s2">.</span><span class="s0">append</span><span class="s2">(</span><span class="s0">iteration</span><span class="s2">)</span>
+            <span class="s0">val_epes_multiscale</span><span class="s2">.</span><span class="s0">append</span><span class="s2">({</span>
+                <span class="s4">'epe1'</span><span class="s2">: </span><span class="s0">val_epe1</span><span class="s2">,</span>
+                <span class="s4">'epe2'</span><span class="s2">: </span><span class="s0">val_epe2</span><span class="s2">,</span>
+                <span class="s4">'epe3'</span><span class="s2">: </span><span class="s0">val_epe3</span><span class="s2">,</span>
+                <span class="s4">'epe4'</span><span class="s2">: </span><span class="s0">val_epe4</span>
+            <span class="s2">})</span>
+
+            <span class="s0">print</span><span class="s2">(</span><span class="s4">f&quot;&gt;&gt;&gt; Validation at iter </span><span class="s1">{</span><span class="s0">iteration</span><span class="s1">:</span><span class="s4">6d</span><span class="s1">} </span><span class="s4">| Val Loss: </span><span class="s1">{</span><span class="s0">val_loss</span><span class="s1">:</span><span class="s4">.4f</span><span class="s1">} </span><span class="s4">| &quot;</span>
+                  <span class="s4">f&quot;*EPE1: </span><span class="s1">{</span><span class="s0">val_epe1</span><span class="s1">:</span><span class="s4">.4f</span><span class="s1">} </span><span class="s4">|  EPE2: </span><span class="s1">{</span><span class="s0">val_epe2</span><span class="s1">:</span><span class="s4">.4f</span><span class="s1">} </span><span class="s4">| &quot;</span>
+                  <span class="s4">f&quot; EPE3: </span><span class="s1">{</span><span class="s0">val_epe3</span><span class="s1">:</span><span class="s4">.4f</span><span class="s1">} </span><span class="s4">|  EPE4: </span><span class="s1">{</span><span class="s0">val_epe4</span><span class="s1">:</span><span class="s4">.4f</span><span class="s1">} </span><span class="s4">|  LR: </span><span class="s1">{</span><span class="s0">current_lr</span><span class="s1">:</span><span class="s4">.6f</span><span class="s1">}</span><span class="s4">&quot;</span><span class="s2">)</span>
+
+            <span class="s1">if </span><span class="s0">val_loss </span><span class="s2">&lt; </span><span class="s0">best_val_loss</span><span class="s2">:</span>
+                <span class="s0">best_val_loss </span><span class="s2">= </span><span class="s0">val_loss</span>
+                <span class="s0">torch</span><span class="s2">.</span><span class="s0">save</span><span class="s2">({</span>
+                    <span class="s4">'iteration'</span><span class="s2">: </span><span class="s0">iteration</span><span class="s2">,</span>
+                    <span class="s4">'model_state_dict'</span><span class="s2">: </span><span class="s0">model</span><span class="s2">.</span><span class="s0">state_dict</span><span class="s2">(),</span>
+                    <span class="s4">'optimizer_state_dict'</span><span class="s2">: </span><span class="s0">optimizer</span><span class="s2">.</span><span class="s0">state_dict</span><span class="s2">(),</span>
+                    <span class="s4">'val_loss'</span><span class="s2">: </span><span class="s0">val_loss</span><span class="s2">,</span>
+                    <span class="s4">'val_epe'</span><span class="s2">: </span><span class="s0">val_epe1</span><span class="s2">,</span>
+                    <span class="s4">'lr'</span><span class="s2">: </span><span class="s0">current_lr</span><span class="s2">,</span>
+                    <span class="s4">'val_epes_multiscale'</span><span class="s2">: {</span>
+                        <span class="s4">'epe1'</span><span class="s2">: </span><span class="s0">val_epe1</span><span class="s2">,</span>
+                        <span class="s4">'epe2'</span><span class="s2">: </span><span class="s0">val_epe2</span><span class="s2">,</span>
+                        <span class="s4">'epe3'</span><span class="s2">: </span><span class="s0">val_epe3</span><span class="s2">,</span>
+                        <span class="s4">'epe4'</span><span class="s2">: </span><span class="s0">val_epe4</span>
+                    <span class="s2">}</span>
+                <span class="s2">}, </span><span class="s0">checkpoint_dir </span><span class="s2">/ </span><span class="s4">'best_flownet_model.pth'</span><span class="s2">)</span>
+                <span class="s0">print</span><span class="s2">(</span><span class="s4">f&quot;✓ Saved best model (Loss: </span><span class="s1">{</span><span class="s0">val_loss</span><span class="s1">:</span><span class="s4">.4f</span><span class="s1">}</span><span class="s4">, EPE1: </span><span class="s1">{</span><span class="s0">val_epe1</span><span class="s1">:</span><span class="s4">.4f</span><span class="s1">}</span><span class="s4">)&quot;</span><span class="s2">)</span>
+
+            <span class="s0">model</span><span class="s2">.</span><span class="s0">train</span><span class="s2">()</span>
+            <span class="s0">start_time </span><span class="s2">= </span><span class="s0">time</span><span class="s2">.</span><span class="s0">time</span><span class="s2">()</span>
+
+        <span class="s1">if </span><span class="s0">iteration </span><span class="s2">% </span><span class="s0">save_interval </span><span class="s2">== </span><span class="s5">0</span><span class="s2">:</span>
+            <span class="s0">save_checkpoint_generic</span><span class="s2">(</span>
+                <span class="s0">checkpoint_dir</span><span class="s2">,</span>
+                <span class="s0">iteration</span><span class="s2">,</span>
+                <span class="s2">{</span>
+                    <span class="s4">'iteration'</span><span class="s2">: </span><span class="s0">iteration</span><span class="s2">,</span>
+                    <span class="s4">'model_state_dict'</span><span class="s2">: </span><span class="s0">model</span><span class="s2">.</span><span class="s0">state_dict</span><span class="s2">(),</span>
+                    <span class="s4">'optimizer_state_dict'</span><span class="s2">: </span><span class="s0">optimizer</span><span class="s2">.</span><span class="s0">state_dict</span><span class="s2">(),</span>
+                    <span class="s4">'lr'</span><span class="s2">: </span><span class="s0">current_lr</span><span class="s2">,</span>
+                    <span class="s4">'best_val_loss'</span><span class="s2">: </span><span class="s0">best_val_loss</span><span class="s2">,</span>
+                    <span class="s4">'val_losses'</span><span class="s2">: </span><span class="s0">val_losses</span><span class="s2">,</span>
+                    <span class="s4">'val_epes'</span><span class="s2">: </span><span class="s0">val_epes</span><span class="s2">,</span>
+                    <span class="s4">'iterations_log'</span><span class="s2">: </span><span class="s0">iterations_log</span><span class="s2">,</span>
+                    <span class="s4">'train_losses'</span><span class="s2">: </span><span class="s0">train_losses</span><span class="s2">,</span>
+                    <span class="s4">'val_epes_multiscale'</span><span class="s2">: </span><span class="s0">val_epes_multiscale</span>
+                <span class="s2">},</span>
+                <span class="s0">max_checkpoints</span><span class="s2">=</span><span class="s5">5</span>
+            <span class="s2">)</span>
+
+        <span class="s0">iteration </span><span class="s2">+= </span><span class="s5">1</span>
+
+<span class="s0">print</span><span class="s2">(</span><span class="s4">&quot;</span><span class="s1">\n</span><span class="s4">🎉 Training completed!&quot;</span><span class="s2">)</span>
+<span class="s0">print</span><span class="s2">(</span><span class="s4">f&quot;📊 Final statistics:&quot;</span><span class="s2">)</span>
+<span class="s0">print</span><span class="s2">(</span><span class="s4">f&quot;  - Best validation loss: </span><span class="s1">{</span><span class="s0">best_val_loss</span><span class="s1">:</span><span class="s4">.6f</span><span class="s1">}</span><span class="s4">&quot;</span><span class="s2">)</span>
+<span class="s0">print</span><span class="s2">(</span><span class="s4">f&quot;  - Total validation points: </span><span class="s1">{</span><span class="s0">len</span><span class="s2">(</span><span class="s0">val_losses</span><span class="s2">)</span><span class="s1">}</span><span class="s4">&quot;</span><span class="s2">)</span>
+<span class="s0">print</span><span class="s2">(</span><span class="s4">f&quot;  - Total training loss logs: </span><span class="s1">{</span><span class="s0">len</span><span class="s2">(</span><span class="s0">train_losses</span><span class="s2">)</span><span class="s1">}</span><span class="s4">&quot;</span><span class="s2">)</span><hr class="ls0"><span class="s0">#%% 
+</span><hr class="ls0"><span class="s0">#%% 
+</span><span class="s3"># Plot training curves</span>
+<span class="s1">def </span><span class="s0">plot_training_curves</span><span class="s2">(</span><span class="s0">iterations_log</span><span class="s2">, </span><span class="s0">val_losses</span><span class="s2">):</span>
+    <span class="s6">&quot;&quot;&quot;Plot validation losses over iterations&quot;&quot;&quot;</span>
+    <span class="s0">plt</span><span class="s2">.</span><span class="s0">figure</span><span class="s2">(</span><span class="s0">figsize</span><span class="s2">=(</span><span class="s5">12</span><span class="s2">, </span><span class="s5">5</span><span class="s2">))</span>
+    <span class="s0">plt</span><span class="s2">.</span><span class="s0">plot</span><span class="s2">(</span><span class="s0">iterations_log</span><span class="s2">, </span><span class="s0">val_losses</span><span class="s2">, </span><span class="s0">label</span><span class="s2">=</span><span class="s4">'Validation Loss'</span><span class="s2">)</span>
+    <span class="s0">plt</span><span class="s2">.</span><span class="s0">xlabel</span><span class="s2">(</span><span class="s4">'Iteration'</span><span class="s2">)</span>
+    <span class="s0">plt</span><span class="s2">.</span><span class="s0">ylabel</span><span class="s2">(</span><span class="s4">'Loss'</span><span class="s2">)</span>
+    <span class="s0">plt</span><span class="s2">.</span><span class="s0">title</span><span class="s2">(</span><span class="s4">'Validation Loss over Iterations'</span><span class="s2">)</span>
+    <span class="s0">plt</span><span class="s2">.</span><span class="s0">legend</span><span class="s2">()</span>
+    <span class="s0">plt</span><span class="s2">.</span><span class="s0">grid</span><span class="s2">(</span><span class="s1">True</span><span class="s2">)</span>
+    <span class="s0">plt</span><span class="s2">.</span><span class="s0">show</span><span class="s2">()</span>
+
+
+<span class="s3"># Plot after training</span>
+<span class="s0">plot_training_curves</span><span class="s2">(</span><span class="s0">iterations_log</span><span class="s2">, </span><span class="s0">val_losses</span><span class="s2">)</span>
+
+<span class="s3"># Plot EPE over iterations</span>
+<span class="s0">plt</span><span class="s2">.</span><span class="s0">figure</span><span class="s2">(</span><span class="s0">figsize</span><span class="s2">=(</span><span class="s5">12</span><span class="s2">, </span><span class="s5">5</span><span class="s2">))</span>
+<span class="s0">plt</span><span class="s2">.</span><span class="s0">plot</span><span class="s2">(</span><span class="s0">iterations_log</span><span class="s2">, </span><span class="s0">val_epes</span><span class="s2">, </span><span class="s0">label</span><span class="s2">=</span><span class="s4">'Validation EPE'</span><span class="s2">, </span><span class="s0">color</span><span class="s2">=</span><span class="s4">'orange'</span><span class="s2">)</span>
+<span class="s0">plt</span><span class="s2">.</span><span class="s0">xlabel</span><span class="s2">(</span><span class="s4">'Iteration'</span><span class="s2">)</span>
+<span class="s0">plt</span><span class="s2">.</span><span class="s0">ylabel</span><span class="s2">(</span><span class="s4">'EPE (pixels)'</span><span class="s2">)</span>
+<span class="s0">plt</span><span class="s2">.</span><span class="s0">title</span><span class="s2">(</span><span class="s4">'Validation Endpoint Error over Iterations'</span><span class="s2">)</span>
+<span class="s0">plt</span><span class="s2">.</span><span class="s0">legend</span><span class="s2">()</span>
+<span class="s0">plt</span><span class="s2">.</span><span class="s0">grid</span><span class="s2">(</span><span class="s1">True</span><span class="s2">)</span>
+<span class="s0">plt</span><span class="s2">.</span><span class="s0">show</span><span class="s2">()</span><hr class="ls0"><span class="s0">#%% 
+</span><span class="s3"># Cell: Comprehensive Training Data Visualization</span>
+<span class="s1">import </span><span class="s0">matplotlib</span><span class="s2">.</span><span class="s0">pyplot </span><span class="s1">as </span><span class="s0">plt</span>
+<span class="s1">import </span><span class="s0">numpy </span><span class="s1">as </span><span class="s0">np</span>
+<span class="s1">from </span><span class="s0">pathlib </span><span class="s1">import </span><span class="s0">Path</span>
+<span class="s1">import </span><span class="s0">torch</span>
+
+<span class="s1">def </span><span class="s0">visualize_training_data</span><span class="s2">(</span><span class="s0">checkpoint_path</span><span class="s2">=</span><span class="s4">'./checkpoints'</span><span class="s2">, </span><span class="s0">figsize</span><span class="s2">=(</span><span class="s5">16</span><span class="s2">, </span><span class="s5">12</span><span class="s2">)):</span>
+    <span class="s6">&quot;&quot;&quot; 
+    Load checkpoint and create comprehensive visualizations of training data. 
+ 
+    Args: 
+        checkpoint_path: Path to checkpoint directory 
+        figsize: Figure size for plots 
+    &quot;&quot;&quot;</span>
+    <span class="s3"># Load checkpoint</span>
+    <span class="s0">checkpoint </span><span class="s2">= </span><span class="s0">load_checkpoint_generic</span><span class="s2">(</span><span class="s0">checkpoint_path</span><span class="s2">, </span><span class="s0">device</span><span class="s2">=</span><span class="s4">'cpu'</span><span class="s2">)</span>
+
+    <span class="s1">if not </span><span class="s0">checkpoint</span><span class="s2">:</span>
+        <span class="s0">print</span><span class="s2">(</span><span class="s4">&quot;❌ No checkpoint found!&quot;</span><span class="s2">)</span>
+        <span class="s1">return</span>
+
+    <span class="s3"># Extract data</span>
+    <span class="s0">train_losses </span><span class="s2">= </span><span class="s0">checkpoint</span><span class="s2">.</span><span class="s0">get</span><span class="s2">(</span><span class="s4">'train_losses'</span><span class="s2">, [])</span>
+    <span class="s0">val_losses </span><span class="s2">= </span><span class="s0">checkpoint</span><span class="s2">.</span><span class="s0">get</span><span class="s2">(</span><span class="s4">'val_losses'</span><span class="s2">, [])</span>
+    <span class="s0">val_epes </span><span class="s2">= </span><span class="s0">checkpoint</span><span class="s2">.</span><span class="s0">get</span><span class="s2">(</span><span class="s4">'val_epes'</span><span class="s2">, [])</span>
+    <span class="s0">iterations_log </span><span class="s2">= </span><span class="s0">checkpoint</span><span class="s2">.</span><span class="s0">get</span><span class="s2">(</span><span class="s4">'iterations_log'</span><span class="s2">, [])</span>
+    <span class="s0">val_epes_multiscale </span><span class="s2">= </span><span class="s0">checkpoint</span><span class="s2">.</span><span class="s0">get</span><span class="s2">(</span><span class="s4">'val_epes_multiscale'</span><span class="s2">, [])</span>
+
+    <span class="s3"># Create figure with subplots</span>
+    <span class="s0">fig </span><span class="s2">= </span><span class="s0">plt</span><span class="s2">.</span><span class="s0">figure</span><span class="s2">(</span><span class="s0">figsize</span><span class="s2">=</span><span class="s0">figsize</span><span class="s2">)</span>
+    <span class="s0">gs </span><span class="s2">= </span><span class="s0">fig</span><span class="s2">.</span><span class="s0">add_gridspec</span><span class="s2">(</span><span class="s5">3</span><span class="s2">, </span><span class="s5">2</span><span class="s2">, </span><span class="s0">hspace</span><span class="s2">=</span><span class="s5">0.3</span><span class="s2">, </span><span class="s0">wspace</span><span class="s2">=</span><span class="s5">0.3</span><span class="s2">)</span>
+
+    <span class="s3"># 1. Training Loss (top left)</span>
+    <span class="s0">ax1 </span><span class="s2">= </span><span class="s0">fig</span><span class="s2">.</span><span class="s0">add_subplot</span><span class="s2">(</span><span class="s0">gs</span><span class="s2">[</span><span class="s5">0</span><span class="s2">, </span><span class="s5">0</span><span class="s2">])</span>
+    <span class="s1">if </span><span class="s0">train_losses</span><span class="s2">:</span>
+        <span class="s0">train_iters </span><span class="s2">= </span><span class="s0">range</span><span class="s2">(</span><span class="s0">log_interval</span><span class="s2">, </span><span class="s0">len</span><span class="s2">(</span><span class="s0">train_losses</span><span class="s2">) * </span><span class="s0">log_interval </span><span class="s2">+ </span><span class="s5">1</span><span class="s2">, </span><span class="s0">log_interval</span><span class="s2">)</span>
+        <span class="s0">ax1</span><span class="s2">.</span><span class="s0">plot</span><span class="s2">(</span><span class="s0">train_iters</span><span class="s2">, </span><span class="s0">train_losses</span><span class="s2">, </span><span class="s0">color</span><span class="s2">=</span><span class="s4">'#2E86AB'</span><span class="s2">, </span><span class="s0">alpha</span><span class="s2">=</span><span class="s5">0.7</span><span class="s2">, </span><span class="s0">linewidth</span><span class="s2">=</span><span class="s5">1</span><span class="s2">)</span>
+        <span class="s0">ax1</span><span class="s2">.</span><span class="s0">set_xlabel</span><span class="s2">(</span><span class="s4">'Iteration'</span><span class="s2">, </span><span class="s0">fontsize</span><span class="s2">=</span><span class="s5">11</span><span class="s2">)</span>
+        <span class="s0">ax1</span><span class="s2">.</span><span class="s0">set_ylabel</span><span class="s2">(</span><span class="s4">'Training Loss'</span><span class="s2">, </span><span class="s0">fontsize</span><span class="s2">=</span><span class="s5">11</span><span class="s2">)</span>
+        <span class="s0">ax1</span><span class="s2">.</span><span class="s0">set_title</span><span class="s2">(</span><span class="s4">'Training Loss Over Time'</span><span class="s2">, </span><span class="s0">fontsize</span><span class="s2">=</span><span class="s5">13</span><span class="s2">, </span><span class="s0">fontweight</span><span class="s2">=</span><span class="s4">'bold'</span><span class="s2">)</span>
+        <span class="s0">ax1</span><span class="s2">.</span><span class="s0">grid</span><span class="s2">(</span><span class="s1">True</span><span class="s2">, </span><span class="s0">alpha</span><span class="s2">=</span><span class="s5">0.3</span><span class="s2">)</span>
+        <span class="s0">ax1</span><span class="s2">.</span><span class="s0">set_xlim</span><span class="s2">(</span><span class="s0">left</span><span class="s2">=</span><span class="s5">0</span><span class="s2">)</span>
+
+    <span class="s3"># 2. Validation Loss (top right)</span>
+    <span class="s0">ax2 </span><span class="s2">= </span><span class="s0">fig</span><span class="s2">.</span><span class="s0">add_subplot</span><span class="s2">(</span><span class="s0">gs</span><span class="s2">[</span><span class="s5">0</span><span class="s2">, </span><span class="s5">1</span><span class="s2">])</span>
+    <span class="s1">if </span><span class="s0">val_losses </span><span class="s1">and </span><span class="s0">iterations_log</span><span class="s2">:</span>
+        <span class="s0">ax2</span><span class="s2">.</span><span class="s0">plot</span><span class="s2">(</span><span class="s0">iterations_log</span><span class="s2">, </span><span class="s0">val_losses</span><span class="s2">, </span><span class="s0">color</span><span class="s2">=</span><span class="s4">'#A23B72'</span><span class="s2">, </span><span class="s0">linewidth</span><span class="s2">=</span><span class="s5">2</span><span class="s2">, </span><span class="s0">marker</span><span class="s2">=</span><span class="s4">'o'</span><span class="s2">,</span>
+                <span class="s0">markersize</span><span class="s2">=</span><span class="s5">3</span><span class="s2">, </span><span class="s0">markevery</span><span class="s2">=</span><span class="s0">max</span><span class="s2">(</span><span class="s5">1</span><span class="s2">, </span><span class="s0">len</span><span class="s2">(</span><span class="s0">val_losses</span><span class="s2">)//</span><span class="s5">50</span><span class="s2">))</span>
+        <span class="s0">ax2</span><span class="s2">.</span><span class="s0">set_xlabel</span><span class="s2">(</span><span class="s4">'Iteration'</span><span class="s2">, </span><span class="s0">fontsize</span><span class="s2">=</span><span class="s5">11</span><span class="s2">)</span>
+        <span class="s0">ax2</span><span class="s2">.</span><span class="s0">set_ylabel</span><span class="s2">(</span><span class="s4">'Validation Loss'</span><span class="s2">, </span><span class="s0">fontsize</span><span class="s2">=</span><span class="s5">11</span><span class="s2">)</span>
+        <span class="s0">ax2</span><span class="s2">.</span><span class="s0">set_title</span><span class="s2">(</span><span class="s4">'Validation Loss Over Time'</span><span class="s2">, </span><span class="s0">fontsize</span><span class="s2">=</span><span class="s5">13</span><span class="s2">, </span><span class="s0">fontweight</span><span class="s2">=</span><span class="s4">'bold'</span><span class="s2">)</span>
+        <span class="s0">ax2</span><span class="s2">.</span><span class="s0">grid</span><span class="s2">(</span><span class="s1">True</span><span class="s2">, </span><span class="s0">alpha</span><span class="s2">=</span><span class="s5">0.3</span><span class="s2">)</span>
+        <span class="s0">ax2</span><span class="s2">.</span><span class="s0">set_xlim</span><span class="s2">(</span><span class="s0">left</span><span class="s2">=</span><span class="s5">0</span><span class="s2">)</span>
+
+        <span class="s3"># Mark best validation</span>
+        <span class="s0">best_idx </span><span class="s2">= </span><span class="s0">val_losses</span><span class="s2">.</span><span class="s0">index</span><span class="s2">(</span><span class="s0">min</span><span class="s2">(</span><span class="s0">val_losses</span><span class="s2">))</span>
+        <span class="s0">ax2</span><span class="s2">.</span><span class="s0">scatter</span><span class="s2">(</span><span class="s0">iterations_log</span><span class="s2">[</span><span class="s0">best_idx</span><span class="s2">], </span><span class="s0">val_losses</span><span class="s2">[</span><span class="s0">best_idx</span><span class="s2">],</span>
+                   <span class="s0">color</span><span class="s2">=</span><span class="s4">'red'</span><span class="s2">, </span><span class="s0">s</span><span class="s2">=</span><span class="s5">100</span><span class="s2">, </span><span class="s0">zorder</span><span class="s2">=</span><span class="s5">5</span><span class="s2">, </span><span class="s0">marker</span><span class="s2">=</span><span class="s4">'*'</span><span class="s2">,</span>
+                   <span class="s0">label</span><span class="s2">=</span><span class="s4">f'Best: </span><span class="s1">{</span><span class="s0">val_losses</span><span class="s2">[</span><span class="s0">best_idx</span><span class="s2">]</span><span class="s1">:</span><span class="s4">.4f</span><span class="s1">}</span><span class="s4">'</span><span class="s2">)</span>
+        <span class="s0">ax2</span><span class="s2">.</span><span class="s0">legend</span><span class="s2">(</span><span class="s0">fontsize</span><span class="s2">=</span><span class="s5">10</span><span class="s2">)</span>
+
+    <span class="s3"># 3. Validation EPE (Scale 1) - middle left</span>
+    <span class="s0">ax3 </span><span class="s2">= </span><span class="s0">fig</span><span class="s2">.</span><span class="s0">add_subplot</span><span class="s2">(</span><span class="s0">gs</span><span class="s2">[</span><span class="s5">1</span><span class="s2">, </span><span class="s5">0</span><span class="s2">])</span>
+    <span class="s1">if </span><span class="s0">val_epes </span><span class="s1">and </span><span class="s0">iterations_log</span><span class="s2">:</span>
+        <span class="s0">ax3</span><span class="s2">.</span><span class="s0">plot</span><span class="s2">(</span><span class="s0">iterations_log</span><span class="s2">, </span><span class="s0">val_epes</span><span class="s2">, </span><span class="s0">color</span><span class="s2">=</span><span class="s4">'#F18F01'</span><span class="s2">, </span><span class="s0">linewidth</span><span class="s2">=</span><span class="s5">2</span><span class="s2">, </span><span class="s0">marker</span><span class="s2">=</span><span class="s4">'o'</span><span class="s2">,</span>
+                <span class="s0">markersize</span><span class="s2">=</span><span class="s5">3</span><span class="s2">, </span><span class="s0">markevery</span><span class="s2">=</span><span class="s0">max</span><span class="s2">(</span><span class="s5">1</span><span class="s2">, </span><span class="s0">len</span><span class="s2">(</span><span class="s0">val_epes</span><span class="s2">)//</span><span class="s5">50</span><span class="s2">))</span>
+        <span class="s0">ax3</span><span class="s2">.</span><span class="s0">set_xlabel</span><span class="s2">(</span><span class="s4">'Iteration'</span><span class="s2">, </span><span class="s0">fontsize</span><span class="s2">=</span><span class="s5">11</span><span class="s2">)</span>
+        <span class="s0">ax3</span><span class="s2">.</span><span class="s0">set_ylabel</span><span class="s2">(</span><span class="s4">'EPE (pixels)'</span><span class="s2">, </span><span class="s0">fontsize</span><span class="s2">=</span><span class="s5">11</span><span class="s2">)</span>
+        <span class="s0">ax3</span><span class="s2">.</span><span class="s0">set_title</span><span class="s2">(</span><span class="s4">'Validation EPE (Scale 1 - Full Resolution)'</span><span class="s2">, </span><span class="s0">fontsize</span><span class="s2">=</span><span class="s5">13</span><span class="s2">, </span><span class="s0">fontweight</span><span class="s2">=</span><span class="s4">'bold'</span><span class="s2">)</span>
+        <span class="s0">ax3</span><span class="s2">.</span><span class="s0">grid</span><span class="s2">(</span><span class="s1">True</span><span class="s2">, </span><span class="s0">alpha</span><span class="s2">=</span><span class="s5">0.3</span><span class="s2">)</span>
+        <span class="s0">ax3</span><span class="s2">.</span><span class="s0">set_xlim</span><span class="s2">(</span><span class="s0">left</span><span class="s2">=</span><span class="s5">0</span><span class="s2">)</span>
+
+        <span class="s3"># Mark best EPE</span>
+        <span class="s0">best_idx </span><span class="s2">= </span><span class="s0">val_epes</span><span class="s2">.</span><span class="s0">index</span><span class="s2">(</span><span class="s0">min</span><span class="s2">(</span><span class="s0">val_epes</span><span class="s2">))</span>
+        <span class="s0">ax3</span><span class="s2">.</span><span class="s0">scatter</span><span class="s2">(</span><span class="s0">iterations_log</span><span class="s2">[</span><span class="s0">best_idx</span><span class="s2">], </span><span class="s0">val_epes</span><span class="s2">[</span><span class="s0">best_idx</span><span class="s2">],</span>
+                   <span class="s0">color</span><span class="s2">=</span><span class="s4">'red'</span><span class="s2">, </span><span class="s0">s</span><span class="s2">=</span><span class="s5">100</span><span class="s2">, </span><span class="s0">zorder</span><span class="s2">=</span><span class="s5">5</span><span class="s2">, </span><span class="s0">marker</span><span class="s2">=</span><span class="s4">'*'</span><span class="s2">,</span>
+                   <span class="s0">label</span><span class="s2">=</span><span class="s4">f'Best: </span><span class="s1">{</span><span class="s0">val_epes</span><span class="s2">[</span><span class="s0">best_idx</span><span class="s2">]</span><span class="s1">:</span><span class="s4">.4f</span><span class="s1">} </span><span class="s4">px'</span><span class="s2">)</span>
+        <span class="s0">ax3</span><span class="s2">.</span><span class="s0">legend</span><span class="s2">(</span><span class="s0">fontsize</span><span class="s2">=</span><span class="s5">10</span><span class="s2">)</span>
+
+    <span class="s3"># 4. Multi-Scale EPE Comparison - middle right</span>
+    <span class="s0">ax4 </span><span class="s2">= </span><span class="s0">fig</span><span class="s2">.</span><span class="s0">add_subplot</span><span class="s2">(</span><span class="s0">gs</span><span class="s2">[</span><span class="s5">1</span><span class="s2">, </span><span class="s5">1</span><span class="s2">])</span>
+    <span class="s1">if </span><span class="s0">val_epes_multiscale </span><span class="s1">and </span><span class="s0">iterations_log</span><span class="s2">:</span>
+        <span class="s0">epe1 </span><span class="s2">= [</span><span class="s0">v</span><span class="s2">[</span><span class="s4">'epe1'</span><span class="s2">] </span><span class="s1">for </span><span class="s0">v </span><span class="s1">in </span><span class="s0">val_epes_multiscale</span><span class="s2">]</span>
+        <span class="s0">epe2 </span><span class="s2">= [</span><span class="s0">v</span><span class="s2">[</span><span class="s4">'epe2'</span><span class="s2">] </span><span class="s1">for </span><span class="s0">v </span><span class="s1">in </span><span class="s0">val_epes_multiscale</span><span class="s2">]</span>
+        <span class="s0">epe3 </span><span class="s2">= [</span><span class="s0">v</span><span class="s2">[</span><span class="s4">'epe3'</span><span class="s2">] </span><span class="s1">for </span><span class="s0">v </span><span class="s1">in </span><span class="s0">val_epes_multiscale</span><span class="s2">]</span>
+        <span class="s0">epe4 </span><span class="s2">= [</span><span class="s0">v</span><span class="s2">[</span><span class="s4">'epe4'</span><span class="s2">] </span><span class="s1">for </span><span class="s0">v </span><span class="s1">in </span><span class="s0">val_epes_multiscale</span><span class="s2">]</span>
+
+        <span class="s0">ax4</span><span class="s2">.</span><span class="s0">plot</span><span class="s2">(</span><span class="s0">iterations_log</span><span class="s2">, </span><span class="s0">epe1</span><span class="s2">, </span><span class="s0">label</span><span class="s2">=</span><span class="s4">'EPE1 (full)'</span><span class="s2">, </span><span class="s0">linewidth</span><span class="s2">=</span><span class="s5">2.5</span><span class="s2">, </span><span class="s0">color</span><span class="s2">=</span><span class="s4">'#C73E1D'</span><span class="s2">)</span>
+        <span class="s0">ax4</span><span class="s2">.</span><span class="s0">plot</span><span class="s2">(</span><span class="s0">iterations_log</span><span class="s2">, </span><span class="s0">epe2</span><span class="s2">, </span><span class="s0">label</span><span class="s2">=</span><span class="s4">'EPE2 (1/2)'</span><span class="s2">, </span><span class="s0">linewidth</span><span class="s2">=</span><span class="s5">2</span><span class="s2">, </span><span class="s0">color</span><span class="s2">=</span><span class="s4">'#F18F01'</span><span class="s2">, </span><span class="s0">alpha</span><span class="s2">=</span><span class="s5">0.8</span><span class="s2">)</span>
+        <span class="s0">ax4</span><span class="s2">.</span><span class="s0">plot</span><span class="s2">(</span><span class="s0">iterations_log</span><span class="s2">, </span><span class="s0">epe3</span><span class="s2">, </span><span class="s0">label</span><span class="s2">=</span><span class="s4">'EPE3 (1/4)'</span><span class="s2">, </span><span class="s0">linewidth</span><span class="s2">=</span><span class="s5">2</span><span class="s2">, </span><span class="s0">color</span><span class="s2">=</span><span class="s4">'#6A994E'</span><span class="s2">, </span><span class="s0">alpha</span><span class="s2">=</span><span class="s5">0.7</span><span class="s2">)</span>
+        <span class="s0">ax4</span><span class="s2">.</span><span class="s0">plot</span><span class="s2">(</span><span class="s0">iterations_log</span><span class="s2">, </span><span class="s0">epe4</span><span class="s2">, </span><span class="s0">label</span><span class="s2">=</span><span class="s4">'EPE4 (1/8)'</span><span class="s2">, </span><span class="s0">linewidth</span><span class="s2">=</span><span class="s5">2</span><span class="s2">, </span><span class="s0">color</span><span class="s2">=</span><span class="s4">'#2E86AB'</span><span class="s2">, </span><span class="s0">alpha</span><span class="s2">=</span><span class="s5">0.6</span><span class="s2">)</span>
+
+        <span class="s0">ax4</span><span class="s2">.</span><span class="s0">set_xlabel</span><span class="s2">(</span><span class="s4">'Iteration'</span><span class="s2">, </span><span class="s0">fontsize</span><span class="s2">=</span><span class="s5">11</span><span class="s2">)</span>
+        <span class="s0">ax4</span><span class="s2">.</span><span class="s0">set_ylabel</span><span class="s2">(</span><span class="s4">'EPE (pixels)'</span><span class="s2">, </span><span class="s0">fontsize</span><span class="s2">=</span><span class="s5">11</span><span class="s2">)</span>
+        <span class="s0">ax4</span><span class="s2">.</span><span class="s0">set_title</span><span class="s2">(</span><span class="s4">'Multi-Scale EPE Comparison'</span><span class="s2">, </span><span class="s0">fontsize</span><span class="s2">=</span><span class="s5">13</span><span class="s2">, </span><span class="s0">fontweight</span><span class="s2">=</span><span class="s4">'bold'</span><span class="s2">)</span>
+        <span class="s0">ax4</span><span class="s2">.</span><span class="s0">legend</span><span class="s2">(</span><span class="s0">fontsize</span><span class="s2">=</span><span class="s5">10</span><span class="s2">, </span><span class="s0">loc</span><span class="s2">=</span><span class="s4">'upper right'</span><span class="s2">)</span>
+        <span class="s0">ax4</span><span class="s2">.</span><span class="s0">grid</span><span class="s2">(</span><span class="s1">True</span><span class="s2">, </span><span class="s0">alpha</span><span class="s2">=</span><span class="s5">0.3</span><span class="s2">)</span>
+        <span class="s0">ax4</span><span class="s2">.</span><span class="s0">set_xlim</span><span class="s2">(</span><span class="s0">left</span><span class="s2">=</span><span class="s5">0</span><span class="s2">)</span>
+
+    <span class="s3"># 5. Training vs Validation Loss - bottom left</span>
+    <span class="s0">ax5 </span><span class="s2">= </span><span class="s0">fig</span><span class="s2">.</span><span class="s0">add_subplot</span><span class="s2">(</span><span class="s0">gs</span><span class="s2">[</span><span class="s5">2</span><span class="s2">, </span><span class="s5">0</span><span class="s2">])</span>
+    <span class="s1">if </span><span class="s0">train_losses </span><span class="s1">and </span><span class="s0">val_losses </span><span class="s1">and </span><span class="s0">iterations_log</span><span class="s2">:</span>
+        <span class="s0">train_iters </span><span class="s2">= </span><span class="s0">range</span><span class="s2">(</span><span class="s0">log_interval</span><span class="s2">, </span><span class="s0">len</span><span class="s2">(</span><span class="s0">train_losses</span><span class="s2">) * </span><span class="s0">log_interval </span><span class="s2">+ </span><span class="s5">1</span><span class="s2">, </span><span class="s0">log_interval</span><span class="s2">)</span>
+        <span class="s0">ax5</span><span class="s2">.</span><span class="s0">plot</span><span class="s2">(</span><span class="s0">train_iters</span><span class="s2">, </span><span class="s0">train_losses</span><span class="s2">, </span><span class="s0">label</span><span class="s2">=</span><span class="s4">'Training Loss'</span><span class="s2">,</span>
+                <span class="s0">color</span><span class="s2">=</span><span class="s4">'#2E86AB'</span><span class="s2">, </span><span class="s0">alpha</span><span class="s2">=</span><span class="s5">0.5</span><span class="s2">, </span><span class="s0">linewidth</span><span class="s2">=</span><span class="s5">1</span><span class="s2">)</span>
+        <span class="s0">ax5</span><span class="s2">.</span><span class="s0">plot</span><span class="s2">(</span><span class="s0">iterations_log</span><span class="s2">, </span><span class="s0">val_losses</span><span class="s2">, </span><span class="s0">label</span><span class="s2">=</span><span class="s4">'Validation Loss'</span><span class="s2">,</span>
+                <span class="s0">color</span><span class="s2">=</span><span class="s4">'#A23B72'</span><span class="s2">, </span><span class="s0">linewidth</span><span class="s2">=</span><span class="s5">2</span><span class="s2">)</span>
+        <span class="s0">ax5</span><span class="s2">.</span><span class="s0">set_xlabel</span><span class="s2">(</span><span class="s4">'Iteration'</span><span class="s2">, </span><span class="s0">fontsize</span><span class="s2">=</span><span class="s5">11</span><span class="s2">)</span>
+        <span class="s0">ax5</span><span class="s2">.</span><span class="s0">set_ylabel</span><span class="s2">(</span><span class="s4">'Loss'</span><span class="s2">, </span><span class="s0">fontsize</span><span class="s2">=</span><span class="s5">11</span><span class="s2">)</span>
+        <span class="s0">ax5</span><span class="s2">.</span><span class="s0">set_title</span><span class="s2">(</span><span class="s4">'Training vs Validation Loss'</span><span class="s2">, </span><span class="s0">fontsize</span><span class="s2">=</span><span class="s5">13</span><span class="s2">, </span><span class="s0">fontweight</span><span class="s2">=</span><span class="s4">'bold'</span><span class="s2">)</span>
+        <span class="s0">ax5</span><span class="s2">.</span><span class="s0">legend</span><span class="s2">(</span><span class="s0">fontsize</span><span class="s2">=</span><span class="s5">10</span><span class="s2">)</span>
+        <span class="s0">ax5</span><span class="s2">.</span><span class="s0">grid</span><span class="s2">(</span><span class="s1">True</span><span class="s2">, </span><span class="s0">alpha</span><span class="s2">=</span><span class="s5">0.3</span><span class="s2">)</span>
+        <span class="s0">ax5</span><span class="s2">.</span><span class="s0">set_xlim</span><span class="s2">(</span><span class="s0">left</span><span class="s2">=</span><span class="s5">0</span><span class="s2">)</span>
+
+    <span class="s3"># 6. Statistics Summary - bottom right</span>
+    <span class="s0">ax6 </span><span class="s2">= </span><span class="s0">fig</span><span class="s2">.</span><span class="s0">add_subplot</span><span class="s2">(</span><span class="s0">gs</span><span class="s2">[</span><span class="s5">2</span><span class="s2">, </span><span class="s5">1</span><span class="s2">])</span>
+    <span class="s0">ax6</span><span class="s2">.</span><span class="s0">axis</span><span class="s2">(</span><span class="s4">'off'</span><span class="s2">)</span>
+
+    <span class="s3"># Compute statistics</span>
+    <span class="s0">stats_text </span><span class="s2">= </span><span class="s4">&quot;📊 Training Statistics</span><span class="s1">\n</span><span class="s4">&quot; </span><span class="s2">+ </span><span class="s4">&quot;=&quot;</span><span class="s2">*</span><span class="s5">50 </span><span class="s2">+ </span><span class="s4">&quot;</span><span class="s1">\n\n</span><span class="s4">&quot;</span>
+
+    <span class="s1">if </span><span class="s0">val_losses</span><span class="s2">:</span>
+        <span class="s0">best_val_idx </span><span class="s2">= </span><span class="s0">val_losses</span><span class="s2">.</span><span class="s0">index</span><span class="s2">(</span><span class="s0">min</span><span class="s2">(</span><span class="s0">val_losses</span><span class="s2">))</span>
+        <span class="s0">stats_text </span><span class="s2">+= </span><span class="s4">f&quot;Best Validation Loss:</span><span class="s1">\n</span><span class="s4">&quot;</span>
+        <span class="s0">stats_text </span><span class="s2">+= </span><span class="s4">f&quot;  • Value: </span><span class="s1">{</span><span class="s0">min</span><span class="s2">(</span><span class="s0">val_losses</span><span class="s2">)</span><span class="s1">:</span><span class="s4">.6f</span><span class="s1">}\n</span><span class="s4">&quot;</span>
+        <span class="s0">stats_text </span><span class="s2">+= </span><span class="s4">f&quot;  • Iteration: </span><span class="s1">{</span><span class="s0">iterations_log</span><span class="s2">[</span><span class="s0">best_val_idx</span><span class="s2">]</span><span class="s1">:</span><span class="s4">,</span><span class="s1">}\n</span><span class="s4">&quot;</span>
+        <span class="s0">stats_text </span><span class="s2">+= </span><span class="s4">f&quot;  • Current: </span><span class="s1">{</span><span class="s0">val_losses</span><span class="s2">[-</span><span class="s5">1</span><span class="s2">]</span><span class="s1">:</span><span class="s4">.6f</span><span class="s1">}\n\n</span><span class="s4">&quot;</span>
+
+    <span class="s1">if </span><span class="s0">val_epes</span><span class="s2">:</span>
+        <span class="s0">best_epe_idx </span><span class="s2">= </span><span class="s0">val_epes</span><span class="s2">.</span><span class="s0">index</span><span class="s2">(</span><span class="s0">min</span><span class="s2">(</span><span class="s0">val_epes</span><span class="s2">))</span>
+        <span class="s0">stats_text </span><span class="s2">+= </span><span class="s4">f&quot;Best EPE (Scale 1):</span><span class="s1">\n</span><span class="s4">&quot;</span>
+        <span class="s0">stats_text </span><span class="s2">+= </span><span class="s4">f&quot;  • Value: </span><span class="s1">{</span><span class="s0">min</span><span class="s2">(</span><span class="s0">val_epes</span><span class="s2">)</span><span class="s1">:</span><span class="s4">.4f</span><span class="s1">} </span><span class="s4">px</span><span class="s1">\n</span><span class="s4">&quot;</span>
+        <span class="s0">stats_text </span><span class="s2">+= </span><span class="s4">f&quot;  • Iteration: </span><span class="s1">{</span><span class="s0">iterations_log</span><span class="s2">[</span><span class="s0">best_epe_idx</span><span class="s2">]</span><span class="s1">:</span><span class="s4">,</span><span class="s1">}\n</span><span class="s4">&quot;</span>
+        <span class="s0">stats_text </span><span class="s2">+= </span><span class="s4">f&quot;  • Current: </span><span class="s1">{</span><span class="s0">val_epes</span><span class="s2">[-</span><span class="s5">1</span><span class="s2">]</span><span class="s1">:</span><span class="s4">.4f</span><span class="s1">} </span><span class="s4">px</span><span class="s1">\n\n</span><span class="s4">&quot;</span>
+
+    <span class="s1">if </span><span class="s0">val_epes_multiscale</span><span class="s2">:</span>
+        <span class="s0">last_ms </span><span class="s2">= </span><span class="s0">val_epes_multiscale</span><span class="s2">[-</span><span class="s5">1</span><span class="s2">]</span>
+        <span class="s0">stats_text </span><span class="s2">+= </span><span class="s4">f&quot;Current Multi-Scale EPE:</span><span class="s1">\n</span><span class="s4">&quot;</span>
+        <span class="s0">stats_text </span><span class="s2">+= </span><span class="s4">f&quot;  • EPE1 (full): </span><span class="s1">{</span><span class="s0">last_ms</span><span class="s2">[</span><span class="s4">'epe1'</span><span class="s2">]</span><span class="s1">:</span><span class="s4">.4f</span><span class="s1">} </span><span class="s4">px</span><span class="s1">\n</span><span class="s4">&quot;</span>
+        <span class="s0">stats_text </span><span class="s2">+= </span><span class="s4">f&quot;  • EPE2 (1/2):  </span><span class="s1">{</span><span class="s0">last_ms</span><span class="s2">[</span><span class="s4">'epe2'</span><span class="s2">]</span><span class="s1">:</span><span class="s4">.4f</span><span class="s1">} </span><span class="s4">px</span><span class="s1">\n</span><span class="s4">&quot;</span>
+        <span class="s0">stats_text </span><span class="s2">+= </span><span class="s4">f&quot;  • EPE3 (1/4):  </span><span class="s1">{</span><span class="s0">last_ms</span><span class="s2">[</span><span class="s4">'epe3'</span><span class="s2">]</span><span class="s1">:</span><span class="s4">.4f</span><span class="s1">} </span><span class="s4">px</span><span class="s1">\n</span><span class="s4">&quot;</span>
+        <span class="s0">stats_text </span><span class="s2">+= </span><span class="s4">f&quot;  • EPE4 (1/8):  </span><span class="s1">{</span><span class="s0">last_ms</span><span class="s2">[</span><span class="s4">'epe4'</span><span class="s2">]</span><span class="s1">:</span><span class="s4">.4f</span><span class="s1">} </span><span class="s4">px</span><span class="s1">\n\n</span><span class="s4">&quot;</span>
+
+    <span class="s0">stats_text </span><span class="s2">+= </span><span class="s4">f&quot;Training Progress:</span><span class="s1">\n</span><span class="s4">&quot;</span>
+    <span class="s0">stats_text </span><span class="s2">+= </span><span class="s4">f&quot;  • Total iterations: </span><span class="s1">{</span><span class="s0">checkpoint</span><span class="s2">.</span><span class="s0">get</span><span class="s2">(</span><span class="s4">'iteration'</span><span class="s2">, </span><span class="s4">'N/A'</span><span class="s2">)</span><span class="s1">:</span><span class="s4">,</span><span class="s1">}\n</span><span class="s4">&quot;</span>
+    <span class="s0">stats_text </span><span class="s2">+= </span><span class="s4">f&quot;  • Validation points: </span><span class="s1">{</span><span class="s0">len</span><span class="s2">(</span><span class="s0">val_losses</span><span class="s2">)</span><span class="s1">}\n</span><span class="s4">&quot;</span>
+    <span class="s0">stats_text </span><span class="s2">+= </span><span class="s4">f&quot;  • Training logs: </span><span class="s1">{</span><span class="s0">len</span><span class="s2">(</span><span class="s0">train_losses</span><span class="s2">)</span><span class="s1">}\n</span><span class="s4">&quot;</span>
+    <span class="s0">stats_text </span><span class="s2">+= </span><span class="s4">f&quot;  • Current LR: </span><span class="s1">{</span><span class="s0">checkpoint</span><span class="s2">.</span><span class="s0">get</span><span class="s2">(</span><span class="s4">'lr'</span><span class="s2">, </span><span class="s4">'N/A'</span><span class="s2">)</span><span class="s1">:</span><span class="s4">.6f</span><span class="s1">}\n</span><span class="s4">&quot;</span>
+
+    <span class="s0">ax6</span><span class="s2">.</span><span class="s0">text</span><span class="s2">(</span><span class="s5">0.05</span><span class="s2">, </span><span class="s5">0.95</span><span class="s2">, </span><span class="s0">stats_text</span><span class="s2">, </span><span class="s0">transform</span><span class="s2">=</span><span class="s0">ax6</span><span class="s2">.</span><span class="s0">transAxes</span><span class="s2">,</span>
+            <span class="s0">fontsize</span><span class="s2">=</span><span class="s5">10</span><span class="s2">, </span><span class="s0">verticalalignment</span><span class="s2">=</span><span class="s4">'top'</span><span class="s2">, </span><span class="s0">fontfamily</span><span class="s2">=</span><span class="s4">'monospace'</span><span class="s2">,</span>
+            <span class="s0">bbox</span><span class="s2">=</span><span class="s0">dict</span><span class="s2">(</span><span class="s0">boxstyle</span><span class="s2">=</span><span class="s4">'round'</span><span class="s2">, </span><span class="s0">facecolor</span><span class="s2">=</span><span class="s4">'wheat'</span><span class="s2">, </span><span class="s0">alpha</span><span class="s2">=</span><span class="s5">0.3</span><span class="s2">))</span>
+
+    <span class="s0">plt</span><span class="s2">.</span><span class="s0">suptitle</span><span class="s2">(</span><span class="s4">'FlowNet Training Analysis'</span><span class="s2">, </span><span class="s0">fontsize</span><span class="s2">=</span><span class="s5">16</span><span class="s2">, </span><span class="s0">fontweight</span><span class="s2">=</span><span class="s4">'bold'</span><span class="s2">, </span><span class="s0">y</span><span class="s2">=</span><span class="s5">0.995</span><span class="s2">)</span>
+    <span class="s0">plt</span><span class="s2">.</span><span class="s0">show</span><span class="s2">()</span>
+
+    <span class="s3"># Print summary to console</span>
+    <span class="s0">print</span><span class="s2">(</span><span class="s4">&quot;</span><span class="s1">\n</span><span class="s4">&quot; </span><span class="s2">+ </span><span class="s4">&quot;=&quot;</span><span class="s2">*</span><span class="s5">70</span><span class="s2">)</span>
+    <span class="s0">print</span><span class="s2">(</span><span class="s4">&quot;📊 TRAINING DATA SUMMARY&quot;</span><span class="s2">)</span>
+    <span class="s0">print</span><span class="s2">(</span><span class="s4">&quot;=&quot;</span><span class="s2">*</span><span class="s5">70</span><span class="s2">)</span>
+    <span class="s1">if </span><span class="s0">val_losses</span><span class="s2">:</span>
+        <span class="s0">print</span><span class="s2">(</span><span class="s4">f&quot;✓ Best validation loss: </span><span class="s1">{</span><span class="s0">min</span><span class="s2">(</span><span class="s0">val_losses</span><span class="s2">)</span><span class="s1">:</span><span class="s4">.6f</span><span class="s1">} </span><span class="s4">at iteration </span><span class="s1">{</span><span class="s0">iterations_log</span><span class="s2">[</span><span class="s0">val_losses</span><span class="s2">.</span><span class="s0">index</span><span class="s2">(</span><span class="s0">min</span><span class="s2">(</span><span class="s0">val_losses</span><span class="s2">))]</span><span class="s1">:</span><span class="s4">,</span><span class="s1">}</span><span class="s4">&quot;</span><span class="s2">)</span>
+    <span class="s1">if </span><span class="s0">val_epes</span><span class="s2">:</span>
+        <span class="s0">print</span><span class="s2">(</span><span class="s4">f&quot;✓ Best EPE: </span><span class="s1">{</span><span class="s0">min</span><span class="s2">(</span><span class="s0">val_epes</span><span class="s2">)</span><span class="s1">:</span><span class="s4">.4f</span><span class="s1">} </span><span class="s4">px at iteration </span><span class="s1">{</span><span class="s0">iterations_log</span><span class="s2">[</span><span class="s0">val_epes</span><span class="s2">.</span><span class="s0">index</span><span class="s2">(</span><span class="s0">min</span><span class="s2">(</span><span class="s0">val_epes</span><span class="s2">))]</span><span class="s1">:</span><span class="s4">,</span><span class="s1">}</span><span class="s4">&quot;</span><span class="s2">)</span>
+    <span class="s0">print</span><span class="s2">(</span><span class="s4">f&quot;✓ Total validation points: </span><span class="s1">{</span><span class="s0">len</span><span class="s2">(</span><span class="s0">val_losses</span><span class="s2">)</span><span class="s1">}</span><span class="s4">&quot;</span><span class="s2">)</span>
+    <span class="s0">print</span><span class="s2">(</span><span class="s4">f&quot;✓ Total training loss logs: </span><span class="s1">{</span><span class="s0">len</span><span class="s2">(</span><span class="s0">train_losses</span><span class="s2">)</span><span class="s1">}</span><span class="s4">&quot;</span><span class="s2">)</span>
+    <span class="s0">print</span><span class="s2">(</span><span class="s4">f&quot;✓ Current iteration: </span><span class="s1">{</span><span class="s0">checkpoint</span><span class="s2">.</span><span class="s0">get</span><span class="s2">(</span><span class="s4">'iteration'</span><span class="s2">, </span><span class="s4">'N/A'</span><span class="s2">)</span><span class="s1">:</span><span class="s4">,</span><span class="s1">}</span><span class="s4">&quot;</span><span class="s2">)</span>
+    <span class="s0">print</span><span class="s2">(</span><span class="s4">&quot;=&quot;</span><span class="s2">*</span><span class="s5">70 </span><span class="s2">+ </span><span class="s4">&quot;</span><span class="s1">\n</span><span class="s4">&quot;</span><span class="s2">)</span>
+
+
+<span class="s1">def </span><span class="s0">plot_epe_distribution</span><span class="s2">(</span><span class="s0">checkpoint_path</span><span class="s2">=</span><span class="s4">'./checkpoints'</span><span class="s2">):</span>
+    <span class="s6">&quot;&quot;&quot;Plot distribution of EPE values across all scales&quot;&quot;&quot;</span>
+    <span class="s0">checkpoint </span><span class="s2">= </span><span class="s0">load_checkpoint_generic</span><span class="s2">(</span><span class="s0">checkpoint_path</span><span class="s2">, </span><span class="s0">device</span><span class="s2">=</span><span class="s4">'cpu'</span><span class="s2">)</span>
+
+    <span class="s1">if not </span><span class="s0">checkpoint </span><span class="s1">or </span><span class="s4">'val_epes_multiscale' </span><span class="s1">not in </span><span class="s0">checkpoint</span><span class="s2">:</span>
+        <span class="s0">print</span><span class="s2">(</span><span class="s4">&quot;❌ No multiscale EPE data found!&quot;</span><span class="s2">)</span>
+        <span class="s1">return</span>
+
+    <span class="s0">val_epes_multiscale </span><span class="s2">= </span><span class="s0">checkpoint</span><span class="s2">[</span><span class="s4">'val_epes_multiscale'</span><span class="s2">]</span>
+
+    <span class="s0">epe1 </span><span class="s2">= [</span><span class="s0">v</span><span class="s2">[</span><span class="s4">'epe1'</span><span class="s2">] </span><span class="s1">for </span><span class="s0">v </span><span class="s1">in </span><span class="s0">val_epes_multiscale</span><span class="s2">]</span>
+    <span class="s0">epe2 </span><span class="s2">= [</span><span class="s0">v</span><span class="s2">[</span><span class="s4">'epe2'</span><span class="s2">] </span><span class="s1">for </span><span class="s0">v </span><span class="s1">in </span><span class="s0">val_epes_multiscale</span><span class="s2">]</span>
+    <span class="s0">epe3 </span><span class="s2">= [</span><span class="s0">v</span><span class="s2">[</span><span class="s4">'epe3'</span><span class="s2">] </span><span class="s1">for </span><span class="s0">v </span><span class="s1">in </span><span class="s0">val_epes_multiscale</span><span class="s2">]</span>
+    <span class="s0">epe4 </span><span class="s2">= [</span><span class="s0">v</span><span class="s2">[</span><span class="s4">'epe4'</span><span class="s2">] </span><span class="s1">for </span><span class="s0">v </span><span class="s1">in </span><span class="s0">val_epes_multiscale</span><span class="s2">]</span>
+
+    <span class="s0">fig</span><span class="s2">, </span><span class="s0">axes </span><span class="s2">= </span><span class="s0">plt</span><span class="s2">.</span><span class="s0">subplots</span><span class="s2">(</span><span class="s5">2</span><span class="s2">, </span><span class="s5">2</span><span class="s2">, </span><span class="s0">figsize</span><span class="s2">=(</span><span class="s5">14</span><span class="s2">, </span><span class="s5">10</span><span class="s2">))</span>
+    <span class="s0">fig</span><span class="s2">.</span><span class="s0">suptitle</span><span class="s2">(</span><span class="s4">'EPE Distribution Across Scales'</span><span class="s2">, </span><span class="s0">fontsize</span><span class="s2">=</span><span class="s5">16</span><span class="s2">, </span><span class="s0">fontweight</span><span class="s2">=</span><span class="s4">'bold'</span><span class="s2">)</span>
+
+    <span class="s0">scales </span><span class="s2">= [</span>
+        <span class="s2">(</span><span class="s0">epe1</span><span class="s2">, </span><span class="s4">'EPE1 (Full Resolution)'</span><span class="s2">, </span><span class="s4">'#C73E1D'</span><span class="s2">),</span>
+        <span class="s2">(</span><span class="s0">epe2</span><span class="s2">, </span><span class="s4">'EPE2 (1/2 Resolution)'</span><span class="s2">, </span><span class="s4">'#F18F01'</span><span class="s2">),</span>
+        <span class="s2">(</span><span class="s0">epe3</span><span class="s2">, </span><span class="s4">'EPE3 (1/4 Resolution)'</span><span class="s2">, </span><span class="s4">'#6A994E'</span><span class="s2">),</span>
+        <span class="s2">(</span><span class="s0">epe4</span><span class="s2">, </span><span class="s4">'EPE4 (1/8 Resolution)'</span><span class="s2">, </span><span class="s4">'#2E86AB'</span><span class="s2">)</span>
+    <span class="s2">]</span>
+
+    <span class="s1">for </span><span class="s0">idx</span><span class="s2">, (</span><span class="s0">epe_data</span><span class="s2">, </span><span class="s0">title</span><span class="s2">, </span><span class="s0">color</span><span class="s2">) </span><span class="s1">in </span><span class="s0">enumerate</span><span class="s2">(</span><span class="s0">scales</span><span class="s2">):</span>
+        <span class="s0">ax </span><span class="s2">= </span><span class="s0">axes</span><span class="s2">[</span><span class="s0">idx </span><span class="s2">// </span><span class="s5">2</span><span class="s2">, </span><span class="s0">idx </span><span class="s2">% </span><span class="s5">2</span><span class="s2">]</span>
+        <span class="s0">ax</span><span class="s2">.</span><span class="s0">hist</span><span class="s2">(</span><span class="s0">epe_data</span><span class="s2">, </span><span class="s0">bins</span><span class="s2">=</span><span class="s5">50</span><span class="s2">, </span><span class="s0">color</span><span class="s2">=</span><span class="s0">color</span><span class="s2">, </span><span class="s0">alpha</span><span class="s2">=</span><span class="s5">0.7</span><span class="s2">, </span><span class="s0">edgecolor</span><span class="s2">=</span><span class="s4">'black'</span><span class="s2">)</span>
+        <span class="s0">ax</span><span class="s2">.</span><span class="s0">axvline</span><span class="s2">(</span><span class="s0">np</span><span class="s2">.</span><span class="s0">mean</span><span class="s2">(</span><span class="s0">epe_data</span><span class="s2">), </span><span class="s0">color</span><span class="s2">=</span><span class="s4">'red'</span><span class="s2">, </span><span class="s0">linestyle</span><span class="s2">=</span><span class="s4">'--'</span><span class="s2">, </span><span class="s0">linewidth</span><span class="s2">=</span><span class="s5">2</span><span class="s2">,</span>
+                  <span class="s0">label</span><span class="s2">=</span><span class="s4">f'Mean: </span><span class="s1">{</span><span class="s0">np</span><span class="s2">.</span><span class="s0">mean</span><span class="s2">(</span><span class="s0">epe_data</span><span class="s2">)</span><span class="s1">:</span><span class="s4">.4f</span><span class="s1">}</span><span class="s4">'</span><span class="s2">)</span>
+        <span class="s0">ax</span><span class="s2">.</span><span class="s0">axvline</span><span class="s2">(</span><span class="s0">np</span><span class="s2">.</span><span class="s0">median</span><span class="s2">(</span><span class="s0">epe_data</span><span class="s2">), </span><span class="s0">color</span><span class="s2">=</span><span class="s4">'blue'</span><span class="s2">, </span><span class="s0">linestyle</span><span class="s2">=</span><span class="s4">'--'</span><span class="s2">, </span><span class="s0">linewidth</span><span class="s2">=</span><span class="s5">2</span><span class="s2">,</span>
+                  <span class="s0">label</span><span class="s2">=</span><span class="s4">f'Median: </span><span class="s1">{</span><span class="s0">np</span><span class="s2">.</span><span class="s0">median</span><span class="s2">(</span><span class="s0">epe_data</span><span class="s2">)</span><span class="s1">:</span><span class="s4">.4f</span><span class="s1">}</span><span class="s4">'</span><span class="s2">)</span>
+        <span class="s0">ax</span><span class="s2">.</span><span class="s0">set_xlabel</span><span class="s2">(</span><span class="s4">'EPE (pixels)'</span><span class="s2">, </span><span class="s0">fontsize</span><span class="s2">=</span><span class="s5">11</span><span class="s2">)</span>
+        <span class="s0">ax</span><span class="s2">.</span><span class="s0">set_ylabel</span><span class="s2">(</span><span class="s4">'Frequency'</span><span class="s2">, </span><span class="s0">fontsize</span><span class="s2">=</span><span class="s5">11</span><span class="s2">)</span>
+        <span class="s0">ax</span><span class="s2">.</span><span class="s0">set_title</span><span class="s2">(</span><span class="s0">title</span><span class="s2">, </span><span class="s0">fontsize</span><span class="s2">=</span><span class="s5">12</span><span class="s2">, </span><span class="s0">fontweight</span><span class="s2">=</span><span class="s4">'bold'</span><span class="s2">)</span>
+        <span class="s0">ax</span><span class="s2">.</span><span class="s0">legend</span><span class="s2">(</span><span class="s0">fontsize</span><span class="s2">=</span><span class="s5">10</span><span class="s2">)</span>
+        <span class="s0">ax</span><span class="s2">.</span><span class="s0">grid</span><span class="s2">(</span><span class="s1">True</span><span class="s2">, </span><span class="s0">alpha</span><span class="s2">=</span><span class="s5">0.3</span><span class="s2">)</span>
+
+    <span class="s0">plt</span><span class="s2">.</span><span class="s0">tight_layout</span><span class="s2">()</span>
+    <span class="s0">plt</span><span class="s2">.</span><span class="s0">show</span><span class="s2">()</span>
+
+
+<span class="s1">def </span><span class="s0">plot_learning_rate_schedule</span><span class="s2">(</span><span class="s0">max_iterations</span><span class="s2">=</span><span class="s5">500000</span><span class="s2">):</span>
+    <span class="s6">&quot;&quot;&quot;Visualize the learning rate schedule&quot;&quot;&quot;</span>
+    <span class="s0">iterations </span><span class="s2">= </span><span class="s0">list</span><span class="s2">(</span><span class="s0">range</span><span class="s2">(</span><span class="s5">0</span><span class="s2">, </span><span class="s0">max_iterations</span><span class="s2">, </span><span class="s5">1000</span><span class="s2">))</span>
+    <span class="s0">lrs </span><span class="s2">= []</span>
+
+    <span class="s1">for </span><span class="s0">it </span><span class="s1">in </span><span class="s0">iterations</span><span class="s2">:</span>
+        <span class="s1">if </span><span class="s0">it </span><span class="s2">&gt;= </span><span class="s5">200000</span><span class="s2">:</span>
+            <span class="s0">num_halvings </span><span class="s2">= (</span><span class="s0">it </span><span class="s2">- </span><span class="s5">200000</span><span class="s2">) // </span><span class="s5">100000 </span><span class="s2">+ </span><span class="s5">1</span>
+            <span class="s0">lr </span><span class="s2">= </span><span class="s5">1e-4 </span><span class="s2">/ (</span><span class="s5">2 </span><span class="s2">** </span><span class="s0">num_halvings</span><span class="s2">)</span>
+        <span class="s1">else</span><span class="s2">:</span>
+            <span class="s0">lr </span><span class="s2">= </span><span class="s5">1e-4</span>
+        <span class="s0">lrs</span><span class="s2">.</span><span class="s0">append</span><span class="s2">(</span><span class="s0">lr</span><span class="s2">)</span>
+
+    <span class="s0">plt</span><span class="s2">.</span><span class="s0">figure</span><span class="s2">(</span><span class="s0">figsize</span><span class="s2">=(</span><span class="s5">12</span><span class="s2">, </span><span class="s5">5</span><span class="s2">))</span>
+    <span class="s0">plt</span><span class="s2">.</span><span class="s0">plot</span><span class="s2">(</span><span class="s0">iterations</span><span class="s2">, </span><span class="s0">lrs</span><span class="s2">, </span><span class="s0">linewidth</span><span class="s2">=</span><span class="s5">2</span><span class="s2">, </span><span class="s0">color</span><span class="s2">=</span><span class="s4">'#2E86AB'</span><span class="s2">)</span>
+    <span class="s0">plt</span><span class="s2">.</span><span class="s0">xlabel</span><span class="s2">(</span><span class="s4">'Iteration'</span><span class="s2">, </span><span class="s0">fontsize</span><span class="s2">=</span><span class="s5">12</span><span class="s2">)</span>
+    <span class="s0">plt</span><span class="s2">.</span><span class="s0">ylabel</span><span class="s2">(</span><span class="s4">'Learning Rate'</span><span class="s2">, </span><span class="s0">fontsize</span><span class="s2">=</span><span class="s5">12</span><span class="s2">)</span>
+    <span class="s0">plt</span><span class="s2">.</span><span class="s0">title</span><span class="s2">(</span><span class="s4">'Learning Rate Schedule'</span><span class="s2">, </span><span class="s0">fontsize</span><span class="s2">=</span><span class="s5">14</span><span class="s2">, </span><span class="s0">fontweight</span><span class="s2">=</span><span class="s4">'bold'</span><span class="s2">)</span>
+    <span class="s0">plt</span><span class="s2">.</span><span class="s0">grid</span><span class="s2">(</span><span class="s1">True</span><span class="s2">, </span><span class="s0">alpha</span><span class="s2">=</span><span class="s5">0.3</span><span class="s2">)</span>
+    <span class="s0">plt</span><span class="s2">.</span><span class="s0">yscale</span><span class="s2">(</span><span class="s4">'log'</span><span class="s2">)</span>
+
+    <span class="s3"># Mark transition points</span>
+    <span class="s0">plt</span><span class="s2">.</span><span class="s0">axvline</span><span class="s2">(</span><span class="s5">200000</span><span class="s2">, </span><span class="s0">color</span><span class="s2">=</span><span class="s4">'red'</span><span class="s2">, </span><span class="s0">linestyle</span><span class="s2">=</span><span class="s4">'--'</span><span class="s2">, </span><span class="s0">alpha</span><span class="s2">=</span><span class="s5">0.5</span><span class="s2">, </span><span class="s0">label</span><span class="s2">=</span><span class="s4">'Start decay (200k)'</span><span class="s2">)</span>
+    <span class="s0">plt</span><span class="s2">.</span><span class="s0">axvline</span><span class="s2">(</span><span class="s5">300000</span><span class="s2">, </span><span class="s0">color</span><span class="s2">=</span><span class="s4">'orange'</span><span class="s2">, </span><span class="s0">linestyle</span><span class="s2">=</span><span class="s4">'--'</span><span class="s2">, </span><span class="s0">alpha</span><span class="s2">=</span><span class="s5">0.5</span><span class="s2">, </span><span class="s0">label</span><span class="s2">=</span><span class="s4">'1st halving (300k)'</span><span class="s2">)</span>
+    <span class="s0">plt</span><span class="s2">.</span><span class="s0">axvline</span><span class="s2">(</span><span class="s5">400000</span><span class="s2">, </span><span class="s0">color</span><span class="s2">=</span><span class="s4">'green'</span><span class="s2">, </span><span class="s0">linestyle</span><span class="s2">=</span><span class="s4">'--'</span><span class="s2">, </span><span class="s0">alpha</span><span class="s2">=</span><span class="s5">0.5</span><span class="s2">, </span><span class="s0">label</span><span class="s2">=</span><span class="s4">'2nd halving (400k)'</span><span class="s2">)</span>
+    <span class="s0">plt</span><span class="s2">.</span><span class="s0">legend</span><span class="s2">(</span><span class="s0">fontsize</span><span class="s2">=</span><span class="s5">11</span><span class="s2">)</span>
+    <span class="s0">plt</span><span class="s2">.</span><span class="s0">tight_layout</span><span class="s2">()</span>
+    <span class="s0">plt</span><span class="s2">.</span><span class="s0">show</span><span class="s2">()</span>
+
+
+<span class="s3"># Execute all visualizations</span>
+<span class="s0">visualize_training_data</span><span class="s2">(</span><span class="s4">'./checkpoints'</span><span class="s2">)</span>
+<span class="s0">plot_epe_distribution</span><span class="s2">(</span><span class="s4">'./checkpoints'</span><span class="s2">)</span>
+<span class="s0">plot_learning_rate_schedule</span><span class="s2">(</span><span class="s0">max_iterations</span><span class="s2">=</span><span class="s5">500000</span><span class="s2">)</span><hr class="ls0"><span class="s0">#%% 
+</span></pre>
+</body>
+</html>
